@@ -12,3 +12,7 @@ afficher à l'utilisateur l'avancement de sa requete
 afficher des stats: % d'ordre executer etc.
 
 utilisation swagger pour la doc, indiquer les liens où retrouver le swagger
+ex: '''
+Launch server then open http://localhost:8000/redoc or http://localhost:8000/docs
+'''
+
