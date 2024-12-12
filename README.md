@@ -1,4 +1,7 @@
 
+parti exchange avec une seule plateforme
+
+parti display avec 2 carnet d'ordre
 
 1 ordre = 1 token
 permettre au client d'envoyer plusieurs ordres en meme temps mais token different
