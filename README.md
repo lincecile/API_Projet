@@ -1,4 +1,5 @@
 
+
 1 ordre = 1 token
 permettre au client d'envoyer plusieurs ordres en meme temps mais token different
 permettre au client d'indiquer une certaine timeline ex: toutes les minutes pdt 20 min essayer d'executer l'ordre selon le carnet d'ordre
@@ -9,3 +10,5 @@ indiquer aussi le niveau de liquidité sur chacune des plateformes (size de l'or
 
 afficher à l'utilisateur l'avancement de sa requete
 afficher des stats: % d'ordre executer etc.
+
+utilisation swagger pour la doc, indiquer les liens où retrouver le swagger
