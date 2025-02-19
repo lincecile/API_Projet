@@ -1,78 +1,72 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from typing import List, Dict, Any
 from server.connectors import BinanceConnector, KrakenConnector
 from server.auth.auth_manager import AuthenticationManager
 
 app = FastAPI()
-
-# Initialize authentication manager
 auth_manager = AuthenticationManager()
 
-# Initialize exchange connectors
+# Initialisation des connecteurs d'exchanges
 EXCHANGES = {
     "binance": BinanceConnector(),
     "kraken": KrakenConnector()
 }
 
-# Authentication routes
-@app.post("/auth/token")
-async def create_access_token(user_id: str):
-    """Create a new JWT token."""
-    token = auth_manager.create_token(user_id)
-    return {"access_token": token, "token_type": "bearer"}
 
-@app.post("/auth/token/revoke")
-async def revoke_token(credentials: str = Depends(auth_manager.verify_token)):
-    """Revoke a JWT token."""
-    auth_manager.revoke_token(credentials)
-    return {"message": "Token revoked successfully"}
+@app.post("/auth/login")
+async def login(username: str, password: str):
+    """Endpoint de login qui retourne un token"""
+    token = auth_manager.authenticate_user(username, password)
+    if not token:
+        raise HTTPException(status_code=401, detail="Identifiants invalides")
+    return {"token": token}
 
-@app.post("/auth/api-key")
-async def create_api_key(user_id: str = Depends(auth_manager.verify_token)):
-    """Create a new API key."""
-    api_key = auth_manager.generate_api_key(user_id)
-    return {"api_key": api_key}
 
-# Public routes (no authentication required)
+# Route publique (pas d'authentification requise)
 @app.get("/exchanges", response_model=List[str])
 async def get_supported_exchanges():
-    """List all supported exchanges."""
+    """Liste tous les exchanges supportés"""
     return list(EXCHANGES.keys())
 
-# Protected routes (authentication required)
+
+# Routes protégées (authentification requise)
 @app.get("/pairs/{exchange}", response_model=List[str])
-async def get_trading_pairs(
-    exchange: str,
-    user_id: str = Depends(auth_manager.verify_token)
-):
-    """Get available trading pairs for an exchange."""
+async def get_trading_pairs(exchange: str, token: str):
+    """Obtient les paires de trading disponibles"""
+    username = auth_manager.verify_token(token)
+
     exchange = exchange.lower()
     if exchange not in EXCHANGES:
-        raise HTTPException(status_code=400, detail="Unsupported exchange")
+        raise HTTPException(status_code=400, detail="Exchange non supporté")
 
     try:
         return await EXCHANGES[exchange].get_trading_pairs()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/klines/{exchange}/{symbol}", response_model=List[Dict[str, Any]])
 async def get_klines(
-    exchange: str,
-    symbol: str,
-    interval: str = "1m",
-    limit: int = 10,
-    user_id: str = Depends(auth_manager.verify_token)
+        exchange: str,
+        symbol: str,
+        token: str,
+        interval: str = "1m",
+        limit: int = 10
 ):
-    """Get klines (candlestick) data for a trading pair."""
+    """Obtient les données klines"""
+    username = auth_manager.verify_token(token)
+
     exchange = exchange.lower()
     if exchange not in EXCHANGES:
-        raise HTTPException(status_code=400, detail="Unsupported exchange")
+        raise HTTPException(status_code=400, detail="Exchange non supporté")
 
     try:
         return await EXCHANGES[exchange].get_klines(symbol, interval, limit)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
