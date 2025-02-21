@@ -1,8 +1,10 @@
 import aiohttp
 from typing import List, Dict, Any
-from server.connectors.base_connector import BaseConnector
+from server.connectors.base_connector import BaseConnector, BaseExchangeWSConnection
 import datetime as dt
 import pandas as pd
+import json
+import asyncio
 
 class BinanceConnector(BaseConnector):
 
@@ -55,14 +57,49 @@ class BinanceConnector(BaseConnector):
             }
             for entry in raw_data
         ]
+    
 
-if __name__ == "__main__":
-    async def main():
-        connector = BinanceConnector()
-        pairs = await connector.get_trading_pairs()
-        print(pairs)
-        klines = await connector.get_klines("BTCUSDT", "1n", 2000)
-        print(pd.to_datetime(pd.DataFrame(klines)["timestamp"]*1000000))
+class BinanceWSConnection(BaseExchangeWSConnection):
+    def __init__(self):
+        super().__init__("Binance", "wss://stream.binance.com/stream")
 
-    import asyncio
-    asyncio.run(main())
+    async def subscribe_symbol(self, symbol: str):
+        symbol = symbol.replace("/", "").lower()
+        if symbol in self.subscribed_symbols:
+            return
+        # Binance expects lowercase symbol with stream name appended
+        subscribe_msg = {
+            "method": "SUBSCRIBE",
+            "params": [f"{symbol}@depth10@100ms"],
+            "id": symbol
+        }
+        await self.ws.send(json.dumps(subscribe_msg))
+        self.subscribed_symbols.add(symbol)
+        print(f"[Binance] Subscribed to {symbol}")
+
+    async def unsubscribe_symbol(self, symbol: str):
+        symbol = symbol.replace("/", "").lower()
+        if symbol not in self.subscribed_symbols:
+            return
+        unsubscribe_msg = {
+            "method": "UNSUBSCRIBE",
+            "params": [f"{symbol}@depth10@100ms"],
+            "id": symbol
+        }
+        await self.ws.send(json.dumps(unsubscribe_msg))
+        self.subscribed_symbols.remove(symbol)
+        print(f"[Binance] Unsubscribed from {symbol}")
+
+    async def listen(self):
+        message = await self.ws.recv()
+        parsed_message = json.loads(message)
+        if not "depth10" in parsed_message.get("stream", ""): return
+        symbol = parsed_message["stream"].split("@")[0].upper()
+        data = parsed_message.get("data")
+        standardized = {
+            "exchange": "Binance",
+            "symbol": symbol,
+            "bids": [[float(price), float(quantity)] for price, quantity in data.get("bids", [])][:10],
+            "asks": [[float(price), float(quantity)] for price, quantity in data.get("asks", [])][:10],
+        }
+        self.order_book[symbol] = standardized

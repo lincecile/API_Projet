@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
+import websockets
+import asyncio
 
 
 class BaseConnector(ABC):
@@ -18,3 +20,30 @@ class BaseConnector(ABC):
 
     def standardize_klines(self, raw_data: List[List[Any]]) -> List[Dict[str, Any]]:
         pass
+    
+    
+class BaseExchangeWSConnection(ABC):
+    def __init__(self, exchange: str, websocket_url: str):
+        self.exchange = exchange
+        self.websocket_url = websocket_url
+        self.ws = None
+        self.subscribed_symbols: Set[str] = set()
+        self.order_book = {}
+        print("Instanciating Exchange Connection")
+
+    async def connect(self): 
+        self.ws = await websockets.connect(self.websocket_url)
+        print(f"[{self.exchange}] Connected to WebSocket.")
+
+    async def subscribe_symbol(self, symbol: str):
+        pass
+
+    async def unsubscribe_symbol(self, symbol: str):
+        pass
+
+    async def listen(self):
+        pass
+
+    async def run(self):
+        while True:
+            await self.listen()

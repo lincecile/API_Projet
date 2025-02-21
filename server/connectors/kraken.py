@@ -1,31 +1,35 @@
 import aiohttp
 from typing import List, Dict, Any
-from server.connectors.base_connector import BaseConnector
-import datetime as dt
+from server.connectors.base_connector import BaseConnector, BaseExchangeWSConnection
+from server.services.formatters import format_kraken, format_base
 import pandas as pd
 import asyncio
-from fastapi import FastAPI, HTTPException
+from fastapi import HTTPException
+import json
+
 
 class KrakenConnector(BaseConnector):
 
     def __init__(self):
         super().__init__(
-            exchange_name="Kraken",
-            rest_url="https://api.kraken.com/0/public"
+            exchange_name="Kraken", rest_url="https://api.kraken.com/0/public"
         )
 
-    async def get_klines(self, symbol: str, interval: str, limit: int) -> List[Dict[str, Any]]:
+    async def get_klines(
+        self, symbol: str, interval: str, limit: int
+    ) -> List[Dict[str, Any]]:
+        
         url = f"{self.rest_url}/OHLC"
-        
+
         interval_in_minutes = pd.to_timedelta(interval).seconds // 60
-        
+
         if not interval_in_minutes in [1, 5, 15, 30, 60, 240, 1440, 10080, 21600]:
             raise HTTPException(status_code=400, detail="Invalid interval")
-        
+
         params = {
-            "pair": symbol,
+            "pair": format_kraken(symbol),
             "interval": interval_in_minutes,
-            "count": min(limit, 720)
+            "count": min(limit, 720),
         }
         klines = []
 
@@ -49,12 +53,14 @@ class KrakenConnector(BaseConnector):
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 data = await response.json()
-                return [symbol_info["altname"] for symbol_info in data["result"].values()]
+                return [
+                    format_base(symbol_info["altname"]) for symbol_info in data["result"].values()
+                ]
 
     def standardize_klines(self, raw_data):
         return [
             {
-                "timestamp": entry[0]*1000000000,
+                "timestamp": entry[0] * 1000000000,
                 "open": float(entry[1]),
                 "high": float(entry[2]),
                 "low": float(entry[3]),
@@ -64,12 +70,52 @@ class KrakenConnector(BaseConnector):
             for entry in raw_data
         ]
 
-if __name__ == "__main__":
-    async def main():
-        connector = KrakenConnector()
-        pairs = await connector.get_trading_pairs()
-        print(pairs)
-        klines = await connector.get_klines("XXBTZUSD", "15m", 2000)
-        print(pd.to_datetime(pd.DataFrame(klines)["timestamp"]*1000000))
 
-    asyncio.run(main())
+class KrakenWSConnection(BaseExchangeWSConnection):
+    def __init__(self):
+        super().__init__("Kraken", "wss://ws.kraken.com")
+
+    async def subscribe_symbol(self, symbol: str):
+        if symbol in self.subscribed_symbols:
+            return
+        subscribe_msg = {
+            "event": "subscribe",
+            "pair": [format_kraken(symbol)],
+            "subscription": {"name": "book", "depth": 10},
+        }
+        await self.ws.send(json.dumps(subscribe_msg))
+        self.subscribed_symbols.add(symbol)
+        print(f"[Kraken] Subscribed to {symbol}")
+
+    async def unsubscribe_symbol(self, symbol: str):
+        if symbol not in self.subscribed_symbols:
+            return
+        unsubscribe_msg = {
+            "event": "unsubscribe",
+            "pair": [format_kraken(symbol)],
+            "subscription": {"name": "book"},
+        }
+        await self.ws.send(json.dumps(unsubscribe_msg))
+        self.subscribed_symbols.remove(symbol)
+        print(f"[Kraken] Unsubscribed from {symbol}")
+
+    async def listen(self):
+        message = await self.ws.recv()
+        data = json.loads(message)
+        if isinstance(data, list) and len(data) > 1:
+            update = data[1]
+            symbol = format_base(data[3])
+            if "as" in update or "bs" in update:
+                standardized = {
+                    "exchange": "Kraken",
+                    "symbol": symbol,
+                    "bids": [
+                        [float(price), float(quantity)]
+                        for price, quantity, _ in update.get("bs", [])
+                    ][:10],
+                    "asks": [
+                        [float(price), float(quantity)]
+                        for price, quantity, _ in update.get("as", [])
+                    ][:10],
+                }
+                self.order_book[symbol] = standardized
