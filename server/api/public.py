@@ -81,3 +81,8 @@ async def get_klines(
 async def websocket_endpoint(websocket: WebSocket):
     manager = ClientWebSocketManager(websocket)
     await manager.handle(subscription_manager=websocket.app.state.subscription_manager)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("public:app", host="0.0.0.0", port=8000, reload=True)
