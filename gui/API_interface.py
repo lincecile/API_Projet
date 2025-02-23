@@ -1,238 +1,240 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
-from datetime import datetime
+import asyncio
+import threading
 import pandas as pd
-from copy import deepcopy
-
-from client.client_side import ClientSide
+from client_side import ClientSide
+from client_credentials import Credentials
 
 class APIGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Trading Platform")
+        
         self.client = ClientSide()
+        self.loop = asyncio.new_event_loop()
+        threading.Thread(target=self.start_loop, daemon=True).start()
+        
         self.create_widgets()
-        self.update_symbols()
+
+    def start_loop(self):
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_forever()
+
+    def run_async(self, coro):
+        return asyncio.run_coroutine_threadsafe(coro, self.loop)
 
     def create_widgets(self):
-        # Main container
-        main_container = ttk.Frame(self.root)
-        main_container.pack(fill="both", expand=True, padx=5, pady=5)
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(3, weight=1)
 
-        # Top frame for symbol selection and buttons
-        top_frame = ttk.LabelFrame(main_container, text="Stock Controls", padding="5")
-        top_frame.pack(fill="x", padx=5, pady=5)
+        # Frame pour connexion
+        login_frame = ttk.LabelFrame(self.root, text="Connexion API")
+        login_frame.pack(fill="x", padx=5, pady=5)
         
+        ttk.Label(login_frame, text="Username:").pack(side="left", padx=5)
+        self.username_entry = ttk.Entry(login_frame)
+        self.username_entry.pack(side="left", padx=5)
+        
+        ttk.Label(login_frame, text="Password:").pack(side="left", padx=5)
+        self.password_entry = ttk.Entry(login_frame, show="*")
+        self.password_entry.pack(side="left", padx=5)
+        
+        ttk.Button(login_frame, text="Login", command=self.login).pack(side="left", padx=5)
+        
+        # Frame pour selection de l'exchange
+        self.exchange_var = tk.StringVar()
+        exchange_frame = ttk.LabelFrame(self.root, text="Exchanges")
+        exchange_frame.pack(fill="x", padx=5, pady=5)
+
+        self.exchange_combo = ttk.Combobox(exchange_frame, textvariable=self.exchange_var, state="readonly")
+        self.exchange_combo.pack(side="left", padx=5)
+
+        ttk.Button(exchange_frame, text="Charger Exchanges", command=self.update_exchanges).pack(side="left", padx=5)
+        ttk.Button(exchange_frame, text="Sélectionner", command=self.update_symbols).pack(side="left", padx=5)
+
+        # Frame pour selection de symboles
         self.symbol_var = tk.StringVar()
-        self.symbol_combo = ttk.Combobox(top_frame, textvariable=self.symbol_var)
+        symbol_frame = ttk.LabelFrame(self.root, text="Symboles")
+        symbol_frame.pack(fill="x", padx=5, pady=5)
+        
+        self.symbol_combo = ttk.Combobox(symbol_frame, textvariable=self.symbol_var)
         self.symbol_combo.pack(side="left", padx=5)
         
-        ttk.Button(top_frame, text="Refresh Data", command=self.update_order_book).pack(side="left", padx=5)
-        ttk.Button(top_frame, text="Refresh Symbols", command=self.update_symbols).pack(side="left", padx=5)
+        ttk.Button(symbol_frame, text="Charger Symbols", command=self.update_symbols).pack(side="left", padx=5)
+        ttk.Button(symbol_frame, text="Obtenir Order Book", command=self.update_order_book).pack(side="left", padx=5)
         
-        # Middle frame containing order books and portfolio
-        middle_frame = ttk.Frame(main_container)
-        middle_frame.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Bids frame with quantity input
-        bids_frame = ttk.LabelFrame(middle_frame, text="Bids (Buy Orders)", padding="5")
-        bids_frame.pack(side="left", fill="both", expand=True, padx=5)
-        
-        self.bids_text = scrolledtext.ScrolledText(bids_frame, height=15, width=40)
-        self.bids_text.pack(fill="both", expand=True)
-        
-        # Buy controls frame
-        buy_controls = ttk.Frame(bids_frame)
-        buy_controls.pack(fill="x", pady=5)
-        
-        ttk.Label(buy_controls, text="Quantity:").pack(side="left", padx=2)
-        self.buy_quantity = ttk.Entry(buy_controls, width=10)
-        self.buy_quantity.pack(side="left", padx=2)
-        self.buy_quantity.insert(0, "100")  # Default value
-        
-        ttk.Button(buy_controls, text="Buy", command=self.buy_stock).pack(side="left", padx=5)
-        
-        # Asks frame with quantity input
-        asks_frame = ttk.LabelFrame(middle_frame, text="Asks (Sell Orders)", padding="5")
-        asks_frame.pack(side="left", fill="both", expand=True, padx=5)
-        
-        self.asks_text = scrolledtext.ScrolledText(asks_frame, height=15, width=40)
-        self.asks_text.pack(fill="both", expand=True)
-        
-        # Sell controls frame
-        sell_controls = ttk.Frame(asks_frame)
-        sell_controls.pack(fill="x", pady=5)
-        
-        ttk.Label(sell_controls, text="Quantity:").pack(side="left", padx=2)
-        self.sell_quantity = ttk.Entry(sell_controls, width=10)
-        self.sell_quantity.pack(side="left", padx=2)
-        self.sell_quantity.insert(0, "100")  # Default value
-        
-        ttk.Button(sell_controls, text="Sell", command=self.sell_stock).pack(side="left", padx=5)
-        
-        # Portfolio frame
-        portfolio_frame = ttk.LabelFrame(middle_frame, text="Portfolio", padding="5")
-        portfolio_frame.pack(side="left", fill="both", expand=True, padx=5)
-        
-        self.portfolio_text = scrolledtext.ScrolledText(portfolio_frame, height=15, width=40)
-        self.portfolio_text.pack(fill="both", expand=True)
-        ttk.Button(portfolio_frame, text="Refresh Portfolio", command=self.refresh_portfolio).pack(pady=5)
+        # Frame pour affichage des ordres et transactions (bids, asks et portfolio sur une seule ligne)
+        book_frame = ttk.LabelFrame(self.root, text="Order Book et Portfolio")
+        book_frame.pack(fill="both", padx=5, pady=5)
 
-    def validate_quantity(self, quantity_str: str):
-        try:
-            quantity = int(quantity_str)
-            if quantity <= 0:
-                messagebox.showerror("Invalid Quantity", "Quantity must be positive")
-                return None
-            return quantity
-        except ValueError:
-            messagebox.showerror("Invalid Quantity", "Please enter a valid number")
-            return None
+        book_frame.columnconfigure(0, weight=1)
+        book_frame.columnconfigure(1, weight=1)
+        book_frame.columnconfigure(2, weight=1)
+        book_frame.rowconfigure(1, weight=1)
+
+        ttk.Label(book_frame, text="Bids").grid(row=0, column=0, padx=5, pady=5)
+        ttk.Label(book_frame, text="Asks").grid(row=0, column=1, padx=5, pady=5)
+        ttk.Label(book_frame, text="Portfolio").grid(row=0, column=2, padx=5, pady=5)
+
+        self.bids_text = scrolledtext.ScrolledText(book_frame, height=10, width=40)
+        self.bids_text.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+
+        self.asks_text = scrolledtext.ScrolledText(book_frame, height=10, width=40)
+        self.asks_text.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
+
+        self.portfolio_text = scrolledtext.ScrolledText(book_frame, height=10, width=40)
+        self.portfolio_text.grid(row=1, column=2, padx=5, pady=5, sticky="nsew")
+
+        # Frame pour créer TWAP Order
+        twap_frame = ttk.LabelFrame(self.root, text="Créer TWAP Order")
+        twap_frame.pack(fill="x", padx=5, pady=5)
+
+        ttk.Label(twap_frame, text="Symbole:").pack(side="left", padx=5)
+        self.twap_symbol_entry = ttk.Entry(twap_frame)
+        self.twap_symbol_entry.pack(side="left", padx=5)
+
+        ttk.Label(twap_frame, text="Quantité:").pack(side="left", padx=5)
+        self.twap_quantity_entry = ttk.Entry(twap_frame)
+        self.twap_quantity_entry.pack(side="left", padx=5)
+
+        ttk.Label(twap_frame, text="Durée (s):").pack(side="left", padx=5)
+        self.twap_duration_entry = ttk.Entry(twap_frame)
+        self.twap_duration_entry.pack(side="left", padx=5)
+
+        ttk.Label(twap_frame, text="Intervalle (s):").pack(side="left", padx=5)
+        self.twap_interval_entry = ttk.Entry(twap_frame)
+        self.twap_interval_entry.pack(side="left", padx=5)
+
+        ttk.Button(twap_frame, text="Créer TWAP", command=self.create_twap_order).pack(side="left", padx=5)
+
+        # Frame pour suivi TWAP
+        self.twap_status_frame = ttk.LabelFrame(self.root, text="Suivi TWAP")
+        self.twap_status_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.twap_status_text = scrolledtext.ScrolledText(self.twap_status_frame, height=10)
+        self.twap_status_text.pack(fill="both", expand=True, padx=5, pady=5)
+
+    def login(self):
+        username = self.username_entry.get()
+        password = self.password_entry.get()
+        creds = Credentials(username, password)
+        self.run_async(self.async_login(creds))
+
+    async def async_login(self, creds):
+        success = await self.client.login(creds)
+        if success:
+            messagebox.showinfo("Login", "Connexion réussie!")
+        else:
+            messagebox.showerror("Login", "Échec de la connexion!")
+
+    def update_exchanges(self):
+        self.run_async(self.async_update_exchanges())
+
+    async def async_update_exchanges(self):
+        exchanges = await self.client.get_supported_exchanges()
+        if exchanges:
+            self.exchange_combo["values"] = ["Tous"] + exchanges
+            self.exchange_var.set("Tous")  # Par défaut, on sélectionne "Tous"
 
     def update_symbols(self):
-        symbols = self.client.get_available_symbols()
-        self.symbol_combo['values'] = symbols
-        if symbols:
-            self.symbol_combo.set(symbols[0])
-            self.update_order_book()
+        self.run_async(self.async_update_symbols())
+
+    async def async_update_symbols(self):
+        exchanges = await self.client.get_supported_exchanges()
+        if exchanges:
+            pairs = await self.client.get_trading_pairs(exchanges[0])
+            self.symbol_combo['values'] = pairs
+            if pairs:
+                self.symbol_var.set(pairs[0])
 
     def update_order_book(self):
+        self.run_async(self.async_update_order_book())
+
+    async def async_update_order_book(self):
         symbol = self.symbol_var.get()
+        selected_exchange = self.exchange_var.get()
+        exchanges = await self.client.get_supported_exchanges()
+
         if not symbol:
+            messagebox.showerror("Erreur", "Veuillez sélectionner un symbole!")
             return
 
-        data = self.client.get_stock(symbol)
-        if data:
-            # Update the textboxes with current data
-            self.update_order_displays(data)
-            self.refresh_portfolio()
-            data['order_book']['bids'].sort(key=lambda x: x['price'], reverse=True)
-            data['order_book']['asks'].sort(key=lambda x: x['price'])
-            return data
-        
-        
-        return None
+        # On récupère les données pour tous les exchanges si "Tous" est sélectionné
+        if selected_exchange == 'Tous':
+            all_data = []
+            for exchange in exchanges:
+                data = await self.client.get_klines(exchange, symbol)
+                if data:
+                    df = pd.DataFrame(data)
+                    df.insert(0, "Exchange", exchange)  # Ajouter colonne "Exchange"
+                    all_data.append(df)
 
-    def update_order_displays(self, data):
-        # Convert and format data
-        bids_df = pd.DataFrame(data['order_book']['bids'])
-        asks_df = pd.DataFrame(data['order_book']['asks'])
-        
-        # Clear current displays
+            df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+        else:
+            data = await self.client.get_klines(selected_exchange, symbol)
+            df = pd.DataFrame(data) if data else pd.DataFrame()
+
+        # Vérification et affichage des résultats
         self.bids_text.delete('1.0', tk.END)
         self.asks_text.delete('1.0', tk.END)
-        
-        if not bids_df.empty:
-            bids_df = bids_df.sort_values('price', ascending=False).reset_index(drop=True)
-            bids_df['timestamp'] = pd.to_datetime(bids_df['timestamp']).dt.strftime('%H:%M:%S')
-            self.bids_text.insert(tk.END, f"Current Price: {data['last_price']}\n\n")
-            self.bids_text.insert(tk.END, bids_df.to_string())
-            
-        if not asks_df.empty:
-            asks_df = asks_df.sort_values('price', ascending=True).reset_index(drop=True)
-            asks_df['timestamp'] = pd.to_datetime(asks_df['timestamp']).dt.strftime('%H:%M:%S')
-            self.asks_text.insert(tk.END, f"Timestamp: {data['timestamp']}\n\n")
-            self.asks_text.insert(tk.END, asks_df.to_string())
-
-    def buy_stock(self):
-        symbol = self.symbol_var.get()
-        if not symbol:
-            return
-            
-        initial_quantity = self.validate_quantity(self.buy_quantity.get())
-        if initial_quantity is None:
-            return
-            
-        data = self.update_order_book()  # Get fresh data
-        if not data:
-            return
-            
-        success, price, message = self.client.execute_buy_order(symbol, initial_quantity, data)
-        
-        if success:
-            # Mettre à jour l'affichage avec les données modifiées
-            self.update_order_displays(data)
-            
-            # Calculer la quantité exécutée à partir du message
-            executed_quantities = [int(x.split()[0]) for x in message.replace("Executed: ", "").split(";")]
-            total_executed = sum(executed_quantities)
-            
-            # Mettre à jour le champ de quantité avec la quantité restante
-            remaining_quantity = initial_quantity - total_executed
-            if remaining_quantity > 0:
-                self.buy_quantity.delete(0, tk.END)
-                self.buy_quantity.insert(0, str(remaining_quantity))
-            else:
-                self.buy_quantity.delete(0, tk.END)
-                self.buy_quantity.insert(0, "100")  # Reset to default value
-            
-            self.refresh_portfolio()
-            messagebox.showinfo("Trade Executed", message)
-        else:
-            messagebox.showerror("Trade Failed", message)
-
-    def sell_stock(self):
-        symbol = self.symbol_var.get()
-        if not symbol:
-            return
-            
-        initial_quantity = self.validate_quantity(self.sell_quantity.get())
-        if initial_quantity is None:
-            return
-            
-        data = self.update_order_book()  # Get fresh data
-        if not data:
-            return
-            
-        success, price, message = self.client.execute_sell_order(symbol, initial_quantity, data)
-        
-        if success:
-            # Mettre à jour l'affichage avec les données modifiées
-            self.update_order_displays(data)
-            
-            # Calculer la quantité exécutée à partir du message
-            executed_quantities = [int(x.split()[0]) for x in message.replace("Executed: ", "").split(";")]
-            total_executed = sum(executed_quantities)
-            
-            # Mettre à jour le champ de quantité avec la quantité restante
-            remaining_quantity = initial_quantity - total_executed
-            if remaining_quantity > 0:
-                self.sell_quantity.delete(0, tk.END)
-                self.sell_quantity.insert(0, str(remaining_quantity))
-            else:
-                self.sell_quantity.delete(0, tk.END)
-                self.sell_quantity.insert(0, "100")  # Reset to default value
-            
-            self.refresh_portfolio()
-            messagebox.showinfo("Trade Executed", message)
-        else:
-            messagebox.showerror("Trade Failed", message)
-
-    def refresh_portfolio(self):
         self.portfolio_text.delete('1.0', tk.END)
-        
-        portfolio_valuation = self.client.get_portfolio_valuation()
-        if not portfolio_valuation:
-            self.portfolio_text.insert(tk.END, "No positions")
+        if df.empty:
+            self.bids_text.insert(tk.END, "Aucune donnée disponible.")
+            self.asks_text.insert(tk.END, "Aucune donnée disponible.")
+            self.portfolio_text.insert(tk.END, "Aucune donnée disponible.")
             return
         
-        # Display total value at the top
-        total_value = portfolio_valuation.pop('TOTAL')
-        self.portfolio_text.insert(tk.END, f"Total Portfolio Value: ${total_value['market_value']:,.2f}\n\n")
+        # Vérification que les colonnes existent
+        if df.shape[1] < 5:
+            messagebox.showerror("Erreur", "Données de l'order book incorrectes.")
+            return
+
+        df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], unit='ns', errors='coerce')
+
+        # Séparation des bids et asks (hypothèse : ordres triés par prix)
+        bids = df.iloc[:5].to_string(index=False)  # Premières lignes (simulées comme "bids")
+        asks = df.iloc[-5:].to_string(index=False)  # Dernières lignes (simulées comme "asks")
+
+        self.bids_text.insert(tk.END, bids)
+        self.asks_text.insert(tk.END, asks)
+
+        # Affichage du portfolio fictif
+        moyenne = df[4].mean() if not df.empty else 0
+        portfolio_data = f"Total Assets: {len(df)}\nValeur Moyenne: {moyenne:.2f}"
+        self.portfolio_text.insert(tk.END, portfolio_data)
+
+    def create_twap_order(self):
+        exchange = self.exchange_var.get()
+        symbol = self.twap_symbol_entry.get()
+        quantity = self.twap_quantity_entry.get()
+        slices = self.twap_interval_entry.get()
+        duration_seconds = self.twap_duration_entry.get()
+
+        if not (symbol and quantity and slices and duration_seconds):
+            messagebox.showerror("Erreur", "Tous les champs doivent être remplis.")
+            return
         
-        # Display positions
-        if portfolio_valuation:
-            df = pd.DataFrame.from_dict(portfolio_valuation, orient='index')
-            df = df.round(2)
-            self.portfolio_text.insert(tk.END, "Current Portfolio:\n\n")
-            self.portfolio_text.insert(tk.END, df.to_string())
+        self.run_async(self.async_create_twap_order(exchange=exchange, symbol=symbol, quantity=quantity, slices=slices, duration_seconds=duration_seconds))
 
+    async def async_create_twap_order(self, exchange, symbol, quantity, slices, duration_seconds):
+        print(exchange, symbol, quantity, slices, duration_seconds)
+        success = await self.client.create_twap_order(exchange, symbol, float(quantity), int(slices), int(duration_seconds))
+        if success:
+            messagebox.showinfo("TWAP", "TWAP Order créé avec succès!")
+        else:
+            messagebox.showerror("TWAP", "Échec de la création du TWAP Order.")
 
+    def auto_update_twap_status(self):
+        self.run_async(self.async_update_twap_status())
+        self.root.after(2000, self.auto_update_twap_status)  # Actualisation toutes les 2 secondes
 
-def main():
+    async def async_update_twap_status(self):
+        status = await self.client.get_twap_status()
+        self.twap_status_text.delete('1.0', tk.END)
+        self.twap_status_text.insert(tk.END, status if status else "Aucun statut TWAP disponible.")
+
+if __name__ == "__main__":
     root = tk.Tk()
     app = APIGUI(root)
     root.mainloop()
-
-if __name__ == "__main__":
-    main()
