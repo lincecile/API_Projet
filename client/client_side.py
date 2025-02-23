@@ -2,7 +2,7 @@ import asyncio
 import aiohttp
 import websockets
 import json
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Callable
 from client_credentials import Credentials
 import datetime
 
@@ -13,6 +13,7 @@ class ClientSide:
         self.token: Optional[str] = None
         self.session: Optional[aiohttp.ClientSession] = None
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
+        self.keep_ws: Optional[asyncio.Task] = None
         
     async def __aenter__(self):
         """Permet l'utilisation du client"""
@@ -30,6 +31,18 @@ class ClientSide:
         """S'assure qu'une session HTTP est active."""
         if self.session is None:
             self.session = aiohttp.ClientSession()
+
+    async def _keep_ws_connexion(self):
+        """Maintien la connexion avec WebSocket"""
+        try:
+            while True:
+                if self.ws and not self.ws.close:
+                    await self.ws.ping()
+                await asyncio.sleep(20)  # Ping toutes les 20 secondes
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"Problème dans le ping vers WS : {e}")
 
     async def login(self, credentials: Credentials):
         """
@@ -104,6 +117,62 @@ class ClientSide:
                                     params={"token": self.token, "interval": interval, "limit": limit}) as response:
             response.raise_for_status()
             return await response.json()
+        
+    async def create_twap_order(self, exchange: str, symbol: str, quantity: float, slices: int, duration_seconds: int):
+        """
+        Crée un ordre TWAP
+        
+        Returns:
+            id de l'ordre crée
+        """
+        await self._ensure_connexion()
+
+        async with self.session.post(f"{self.base_url}/twap",
+                                     params={
+                                         "exchange": exchange, "symbol": symbol, "quantity": quantity, "slices": slices,
+                                         "duration_seconds": duration_seconds, "token": self.token}
+                                         ) as response:
+            response.raise_for_status()
+            data = await response.json()
+            return data['order_id']
+
+    async def get_twap_status(self, order_id: str) -> Dict[str, Any]:
+        """
+        Récupère le statut d'un ordre TWAP via son id
+
+        Returns:
+            Dict : {'status': str, 'executed_quantity': int, 
+            'total_quantity': float, 'slices_executed': int, 
+            'total_slices': int, 'executions': list, 'average_price': float}
+        """
+        await self._ensure_connexion()
+
+        async with self.session.get(f"{self.base_url}/twap/{order_id}",params={"token": self.token}) as response:
+            response.raise_for_status()
+            return await response.json()
+        
+    async def connect_websocket(self):
+        """Établit une connexion WebSocket et la maintien ouverte"""
+        if self.ws is None or self.ws.close:
+            self.ws = await websockets.connect(self.ws_url)
+        
+        if self.keep_ws is None or self.keep_ws.done():
+            self.keep_ws = asyncio.create_task(self._keep_ws_connexion())
+        
+    async def subscribe_symbol(self, symbol: str):
+        """S'abonne aux mises à jour d'un symbole"""
+        if self.ws is None or self.ws.close:
+            await self.connect_websocket()
+
+        await self.ws.send(json.dumps({"action": "subscribe","symbol": symbol}))
+        
+    async def unsubscribe_symbol(self, symbol: str):
+        """Se désabonne des mises à jour d'un symbole"""
+        if self.ws is None or self.ws.close:
+            await self.connect_websocket()
+            
+        await self.ws.send(json.dumps({"action": "unsubscribe","symbol": symbol}))
+
             
 # Exemple
 async def main():
@@ -133,7 +202,32 @@ async def main():
                     symbol = pairs[0]
                     klines = await client.get_klines(exchange, symbol)
                     print(f"2 dernieres klines pour {symbol} chez {exchange}: {klines[:2]}")
-                print()
+                
+                # Connexion WS
+                await client.connect_websocket()
+
+                # Abonnement aux données temps réel
+                await client.subscribe_symbol(symbol)
+                print(f"Abonné de {symbol} via {exchange}")
+
+                # Création d'un ordre TWAP
+                order_id = await client.create_twap_order(exchange=exchange, symbol=symbol, quantity=1.0, slices=5, duration_seconds=300)
+                print(f"Ordre TWAP créé: {order_id} sur {exchange}")
+
+                # Suivi de l'ordre
+                iteration = 0
+                while True and iteration < 10:
+                    iteration += 1
+                    status = await client.get_twap_status(order_id)
+                    print(f"Statut de l'ordre {iteration}: {status}")
+                    if status["status"] in ["completed", "error"]:
+                        break
+                    await asyncio.sleep(10)
+
+                # Désabonnement aux données temps réel
+                await client.unsubscribe_symbol(symbol)
+                print(f"Désabonné de {symbol} via {exchange}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
