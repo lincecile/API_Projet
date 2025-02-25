@@ -3,8 +3,8 @@ from tkinter import ttk, scrolledtext, messagebox
 import asyncio
 import threading
 import pandas as pd
-from client_side import ClientSide
-from client_credentials import Credentials
+from client.client_side import ClientSide
+from client.client_credentials import Credentials
 
 class APIGUI:
     def __init__(self, root):
