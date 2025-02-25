@@ -3,7 +3,7 @@ import aiohttp
 import websockets
 import json
 from typing import Optional, List, Dict, Any, Callable
-from client_credentials import Credentials
+from client.client_credentials import Credentials
 import datetime
 
 class ClientSide:
