@@ -228,6 +228,16 @@ async def main():
                 await client.unsubscribe_symbol(symbol)
                 print(f"Désabonné de {symbol} via {exchange}")
 
+# Exemple
+async def main_no_auth():
+    
+    async with ClientSide() as client:
+        
+        # Liste des plateformes d'exchange
+        exchanges = await client.get_supported_exchanges()
+        print(f"Plateformes: {exchanges}")
+
 
 if __name__ == "__main__":
+    asyncio.run(main_no_auth())
     asyncio.run(main())
