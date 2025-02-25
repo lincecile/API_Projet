@@ -27,7 +27,7 @@ class KrakenConnector(BaseConnector):
             raise HTTPException(status_code=400, detail="Invalid interval")
 
         params = {
-            "pair": format_kraken(symbol),
+            "pair": symbol,
             "interval": interval_in_minutes,
             "count": min(limit, 720),
         }
