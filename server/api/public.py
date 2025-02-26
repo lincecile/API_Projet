@@ -7,6 +7,7 @@ from server.auth.auth_manager import AuthenticationManager
 from server.services.websocket_manager import ClientWebSocketManager
 from server.services.subscription_manager import SubscriptionManager
 from server.services.twap_order import TWAPOrder
+from server.services.execute_twap_order import execute_twap_order
 from contextlib import asynccontextmanager
 
 
@@ -44,9 +45,8 @@ async def get_supported_exchanges():
 
 # Routes protégées (authentification requise)
 @app.get("/pairs/{exchange}", response_model=List[str])
-async def get_trading_pairs(exchange: str, token: str):
+async def get_trading_pairs(exchange: str):
     """Obtient les paires de trading disponibles"""
-    username = auth_manager.verify_token(token)
     exchange = exchange.lower()
     if exchange not in EXCHANGES:
         raise HTTPException(status_code=400, detail="Exchange non supporté")
@@ -60,10 +60,9 @@ async def get_trading_pairs(exchange: str, token: str):
 
 @app.get("/klines/{exchange}/{symbol}", response_model=List[Dict[str, Any]])
 async def get_klines(
-        exchange: str, symbol: str, token: str, interval: str = "1m", limit: int = 10
+        exchange: str, symbol: str, interval: str = "1m", limit: int = 10
 ):
     """Obtient les données klines"""
-    username = auth_manager.verify_token(token)
     exchange = exchange.lower()
     if exchange not in EXCHANGES:
         raise HTTPException(status_code=400, detail="Exchange non supporté")
@@ -81,48 +80,67 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.handle(subscription_manager=websocket.app.state.subscription_manager)
 
 
-# Routes TWAP
-@app.post("/twap")
+@app.post("/orders/twap")
 async def create_twap_order(
         exchange: str,
         symbol: str,
+        side: str,
         quantity: float,
         slices: int,
-        duration_seconds: int
+        duration_seconds: int,
+        token: str,  # Token d'authentification obligatoire
+        limit_price: float = None,
+        token_id: str = None  # ID d'ordre optionnel
 ):
     """Crée un nouvel ordre TWAP"""
+    # Vérifier l'authentification
+    username = auth_manager.verify_token(token)
+
     exchange = exchange.lower()
     if exchange not in EXCHANGES:
         raise HTTPException(status_code=400, detail="Exchange non supporté")
 
+    if side.lower() not in ["buy", "sell"]:
+        raise HTTPException(status_code=400, detail="Side doit être 'buy' ou 'sell'")
+
+    # Générer un ID d'ordre
+    order_id = token_id or f"order_{len(app.state.active_orders) + 1}"
+
     # Créer l'ordre
-    order_id = f"order_{len(app.state.active_orders) + 1}"
     order = TWAPOrder(
         subscription_manager=app.state.subscription_manager,
         exchange=exchange,
         symbol=symbol,
+        side=side,
         quantity=quantity,
         slices=slices,
-        duration_seconds=duration_seconds
+        duration_seconds=duration_seconds,
+        limit_price=limit_price
     )
+
+    # Stocker l'ordre
     app.state.active_orders[order_id] = order
 
     # Démarrer l'ordre
     await order.start()
     asyncio.create_task(execute_twap_order(app, order_id))
 
-    return {"order_id": order_id}
+    return {"order_id": order_id, "status": "accepted"}
 
 
-@app.get("/twap/{order_id}")
-async def get_twap_status(order_id: str) -> Dict[str, Any]:
+@app.get("/orders/{token_id}")
+async def get_order_status(token_id: str, token: str):
     """Récupère le statut d'un ordre TWAP"""
-    if order_id not in app.state.active_orders:
+    # Vérifier l'authentification
+    username = auth_manager.verify_token(token)
+
+    if token_id not in app.state.active_orders:
         raise HTTPException(status_code=404, detail="Ordre non trouvé")
-    return app.state.active_orders[order_id].get_status()
+
+    return app.state.active_orders[token_id].get_status()
 
 
-async def execute_twap_order(app: FastAPI, order_id: str):
+async def execute_twap_order(app, order_id: str):
     """Exécute un ordre TWAP"""
     order = app.state.active_orders[order_id]
 
@@ -130,10 +148,8 @@ async def execute_twap_order(app: FastAPI, order_id: str):
         while order.status == "active":
             await order.execute_slice()
             await asyncio.sleep(order.interval_seconds)
-
     except Exception as e:
         order.status = "error"
-        print(f"Erreur lors de l'exécution TWAP: {e}")
 
 
 if __name__ == "__main__":
