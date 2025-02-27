@@ -203,12 +203,13 @@ class ClientSide:
             
         start_time = datetime.datetime.now()
         end_time = start_time + datetime.timedelta(seconds=duration_seconds)
-        
+        print(start_time)
         try:
             while datetime.datetime.now() < end_time:
-                message = await asyncio.wait_for(self.ws.recv(), timeout=1.0)
+                message = await asyncio.wait_for(self.ws.recv(), timeout=5.0)
                 data = json.loads(message)
                 callback(data)
+                print('wait')
                 
         except asyncio.TimeoutError:
             # Timeout
@@ -259,7 +260,7 @@ async def main():
                 # Fonction pour traiter les mises à jour WS
                 def handle_ws_message(data):
                     print(f"Message WebSocket reçu: {data}")
-                await client.listen_websocket_updates(handle_ws_message, duration_seconds=10)
+                await client.listen_websocket_updates(handle_ws_message, duration_seconds=100)
                 
                 # Création d'un ordre TWAP d'achat
                 order_id = await client.create_twap_order(

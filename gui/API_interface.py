@@ -174,10 +174,11 @@ class APIGUI:
         # Header frames pour titre + bouton
         order_header = ttk.Frame(order_portfolio_frame)
         order_header.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        ttk.Label(order_header, text="Order").pack(side="left")
+
         self.order_i = tk.StringVar()        
         self.order_combo = ttk.Combobox(order_header, textvariable=self.order_i)
         self.order_combo.pack(side="left", padx=5)
-        ttk.Label(order_header, text="Order").pack(side="left")
         ttk.Button(order_header, text="Cancel Order", command=self.rien).pack(side="left", padx=5)
 
         portfolio_header = ttk.Frame(order_portfolio_frame)
