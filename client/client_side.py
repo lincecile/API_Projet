@@ -5,6 +5,7 @@ import json
 from typing import Optional, List, Dict, Any, Callable
 from client.client_credentials import Credentials
 import datetime
+import pandas as pd
 
 class ClientSide:
     def __init__(self, base_url: str = "http://localhost:8000"):
@@ -65,8 +66,7 @@ class ClientSide:
             data = await response.json()
             self.token = data["token"]
             return True
-        
-            
+                 
     async def get_supported_exchanges(self):
         """
         Récupère la liste des exchanges supportés.
@@ -118,36 +118,53 @@ class ClientSide:
             response.raise_for_status()
             return await response.json()
         
-    async def create_twap_order(self, exchange: str, symbol: str, quantity: float, slices: int, duration_seconds: int):
+    async def create_twap_order(self, exchange: str, symbol: str, side: str, quantity: float, slices: int, duration_seconds: int, limit_price: float = None):
         """
         Crée un ordre TWAP
+
+        Args:
+            exchange: Nom de l'exchange (ex: 'binance', 'kraken')
+            symbol: Symbole de la paire (ex: 'BTCUSDT')
+            side: Type d'ordre ('buy' ou 'sell')
+            quantity: Quantité totale à acheter/vendre
+            slices: Nombre de tranches pour l'ordre TWAP
+            duration_seconds: Durée totale de l'exécution en secondes
+            limit_price: Prix limite optionnel
         
         Returns:
             id de l'ordre crée
         """
         await self._ensure_connexion()
 
-        async with self.session.post(f"{self.base_url}/twap",
-                                     params={
-                                         "exchange": exchange, "symbol": symbol, "quantity": quantity, "slices": slices,
-                                         "duration_seconds": duration_seconds, "token": self.token}
-                                         ) as response:
+        params = {"exchange": exchange,
+            "symbol": symbol,
+            "side": side,
+            "quantity": quantity,
+            "slices": slices,
+            "duration_seconds": duration_seconds,
+            "token": self.token}
+
+        if limit_price is not None:
+            params["limit_price"] = limit_price
+        
+        async with self.session.post(f"{self.base_url}/orders/twap", params=params) as response:
             response.raise_for_status()
             data = await response.json()
             return data['order_id']
 
-    async def get_twap_status(self, order_id: str) -> Dict[str, Any]:
+    async def get_order_status(self, order_id: str) -> Dict[str, Any]:
         """
         Récupère le statut d'un ordre TWAP via son id
 
+        Args:
+            order_id: ID de l'ordre
+
         Returns:
-            Dict : {'status': str, 'executed_quantity': int, 
-            'total_quantity': float, 'slices_executed': int, 
-            'total_slices': int, 'executions': list, 'average_price': float}
+            Dict : Informations sur le statut de l'ordre
         """
         await self._ensure_connexion()
 
-        async with self.session.get(f"{self.base_url}/twap/{order_id}",params={"token": self.token}) as response:
+        async with self.session.get(f"{self.base_url}/orders/{order_id}", params={"token": self.token}) as response:
             response.raise_for_status()
             return await response.json()
         
@@ -173,6 +190,31 @@ class ClientSide:
             
         await self.ws.send(json.dumps({"action": "unsubscribe","symbol": symbol}))
 
+    async def listen_websocket_updates(self, callback: Callable[[Dict[str, Any]], None], duration_seconds: int = 60):
+        """
+        Mises à jour WebSocket pendant une durée spécifiée et applique le callback à chaque message
+        
+        Args:
+            callback: Fonction à appeler pour chaque message reçu
+            duration_seconds: Durée d'écoute en secondes
+        """
+        if self.ws is None or self.ws.close:
+            await self.connect_websocket()
+            
+        start_time = datetime.datetime.now()
+        end_time = start_time + datetime.timedelta(seconds=duration_seconds)
+        
+        try:
+            while datetime.datetime.now() < end_time:
+                message = await asyncio.wait_for(self.ws.recv(), timeout=1.0)
+                data = json.loads(message)
+                callback(data)
+                
+        except asyncio.TimeoutError:
+            # Timeout
+            pass
+        except Exception as e:
+            print(f"Erreur lors de l'écoute WebSocket: {e}")
             
 # Exemple
 async def main():
@@ -192,52 +234,71 @@ async def main():
         if exchanges:
 
             # Pour chaque plateforme
-            for exchange in exchanges[:1]:
+            for exchange in exchanges[1:]:
                 # Trading paire de la plataforme 
                 pairs = await client.get_trading_pairs(exchange)
                 print(f"Premiere paire de trading de {exchange}: {pairs[:5]}")
-            
+                print(pairs)
+                
                 if pairs:
                     # klines des dernieres paires d'un symbole
-                    symbol = pairs[0]
-                    klines = await client.get_klines(exchange, symbol)
-                    print(f"2 dernieres klines pour {symbol} chez {exchange}: {klines[:2]}")
-                
+                    symbol = pairs[0]                    
+                    klines = await client.get_klines(exchange, symbol, interval="1h", limit=5)
+                    print(f"5 dernieres klines pour {symbol} chez {exchange}: {klines}")
+                    for kline in klines:
+                        time_str = pd.to_datetime(kline['timestamp'], unit='ns', errors='coerce')
+                        print(f"  {time_str} - Open: {kline['open']}, High: {kline['high']}, Low: {kline['low']}, Close: {kline['close']}, Volume: {kline['volume']}")
+
                 # Connexion WS
                 await client.connect_websocket()
 
                 # Abonnement aux données temps réel
                 await client.subscribe_symbol(symbol)
-                print(f"Abonné de {symbol} via {exchange}")
+                print(f"Abonné à {symbol} via {exchange}")
 
-                # Création d'un ordre TWAP
-                order_id = await client.create_twap_order(exchange=exchange, symbol=symbol, quantity=1.0, slices=5, duration_seconds=300)
-                print(f"Ordre TWAP créé: {order_id} sur {exchange}")
+                # Fonction pour traiter les mises à jour WS
+                def handle_ws_message(data):
+                    print(f"Message WebSocket reçu: {data}")
+                await client.listen_websocket_updates(handle_ws_message, duration_seconds=10)
+                
+                # Création d'un ordre TWAP d'achat
+                order_id = await client.create_twap_order(
+                    exchange=exchange,
+                    symbol=symbol,
+                    side="buy",
+                    quantity=1.0,  
+                    slices=3,
+                    duration_seconds=60  
+                )
+                print(f"Ordre TWAP créé avec ID: {order_id} sur {exchange}")
 
                 # Suivi de l'ordre
-                iteration = 0
-                while True and iteration < 10:
-                    iteration += 1
-                    status = await client.get_twap_status(order_id)
-                    print(f"Statut de l'ordre {iteration}: {status}")
-                    if status["status"] in ["completed", "error"]:
+                print("Suivi de l'exécution de l'ordre TWAP:")
+                for i in range(5):  # Vérifier 5 fois, espacées de 15 secondes
+                    status = await client.get_order_status(order_id)
+                    print(f"  Statut après {i*15} secondes: {status}")
+                    
+                    if status.get("status") in ["completed", "error"]:
+                        print("Ordre terminé!")
                         break
-                    await asyncio.sleep(10)
+                        
+                    await asyncio.sleep(15)
 
                 # Désabonnement aux données temps réel
                 await client.unsubscribe_symbol(symbol)
                 print(f"Désabonné de {symbol} via {exchange}")
 
-# Exemple
+# Exemple sans authentification
 async def main_no_auth():
-    
     async with ClientSide() as client:
-        
-        # Liste des plateformes d'exchange
+        # Liste des plateformes d'exchange (route publique)
         exchanges = await client.get_supported_exchanges()
-        print(f"Plateformes: {exchanges}")
+        print(f"Plateformes supportées (sans authentification): {exchanges}")
 
 
 if __name__ == "__main__":
+    print("Test sans authentification: \n")
     asyncio.run(main_no_auth())
+    
+    print("Test complet avec authentification:\n")
     asyncio.run(main())
