@@ -34,6 +34,7 @@ class APIGUI:
         self.frame_order_book()
         self.frame_twap_order()
         self.frame_twap_sub_follow()
+        self.frame_order_portfolio()
 
     def frame_connexion(self):
         # Frame pour connexion
@@ -110,7 +111,11 @@ class APIGUI:
         self.twap_quantity_entry = ttk.Entry(twap_frame)
         self.twap_quantity_entry.pack(side="left", padx=5)
 
-        ttk.Label(twap_frame, text="Durée (s):").pack(side="left", padx=5)
+        ttk.Label(twap_frame, text="Sens (buy/sell):").pack(side="left", padx=5)
+        self.twap_price_limit = ttk.Entry(twap_frame)
+        self.twap_price_limit.pack(side="left", padx=5)
+
+        ttk.Label(twap_frame, text="Durée (en seconde):").pack(side="left", padx=5)
         self.twap_duration_entry = ttk.Entry(twap_frame)
         self.twap_duration_entry.pack(side="left", padx=5)
 
@@ -118,30 +123,74 @@ class APIGUI:
         self.twap_interval_entry = ttk.Entry(twap_frame)
         self.twap_interval_entry.pack(side="left", padx=5)
 
+        ttk.Label(twap_frame, text="Limite de prix:").pack(side="left", padx=5)
+        self.twap_price_limit = ttk.Entry(twap_frame)
+        self.twap_price_limit.pack(side="left", padx=5)
+
         ttk.Button(twap_frame, text="Créer TWAP", command=self.create_twap_order).pack(side="left", padx=5)
 
     def frame_twap_sub_follow(self):
-        # Frame pour suivi TWAP, des ordres et subscription
-        suivi_frame = ttk.LabelFrame(self.root, text="TWAP Order")
-        suivi_frame.pack(fill="both", padx=5, pady=5)
+        # Frame pour suivi TWAP et subscription (première ligne, 2 colonnes)
+        suivi_frame = ttk.LabelFrame(self.root, text="Suivi et Subscription")
+        suivi_frame.pack(fill="both", padx=5, pady=5, expand=True)
 
         suivi_frame.columnconfigure(0, weight=1)
         suivi_frame.columnconfigure(1, weight=1)
-        suivi_frame.columnconfigure(2, weight=1)
         suivi_frame.rowconfigure(1, weight=1)
 
-        ttk.Label(suivi_frame, text="Suivi TWAP").grid(row=0, column=0, padx=5, pady=5)
-        ttk.Label(suivi_frame, text="Subcription").grid(row=0, column=1, padx=5, pady=5)
-        ttk.Label(suivi_frame, text="Ordre").grid(row=0, column=2, padx=5, pady=5)
+        # Header frames pour titre + bouton
+        twap_header = ttk.Frame(suivi_frame)
+        twap_header.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        # Label et bouton dans twap_header
+        ttk.Label(twap_header, text="Suivi TWAP").grid(row=0, column=0, sticky="w", padx=5)
+        ttk.Button(twap_header, text="Actualiser", command=self.auto_update_twap_status).grid(row=0, column=1, padx=5, sticky="e")
+        
+        sub_header = ttk.Frame(suivi_frame)
+        sub_header.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Label(sub_header, text="Subscription").pack(side="left")
 
-        self.twap_status_text = scrolledtext.ScrolledText(suivi_frame, height=10, width=40)
+        self.symbol_var = tk.StringVar()        
+        self.symbol_combo = ttk.Combobox(sub_header, textvariable=self.symbol_var)
+        self.symbol_combo.pack(side="left", padx=5)
+        ttk.Button(sub_header, text="S'abonner", command=self.subscribe_to_symbol).pack(side="left", padx=5)
+        ttk.Button(sub_header, text="Se désabonner", command=self.unsubscribe_from_symbol).pack(side="left", padx=5)
+
+        # Création des zones de texte avec une hauteur de 15 (1.5x la hauteur originale de 10)
+        self.twap_status_text = scrolledtext.ScrolledText(suivi_frame, height=10, width=60)
         self.twap_status_text.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
 
-        self.subcription_text = scrolledtext.ScrolledText(suivi_frame, height=10, width=40)
-        self.subcription_text.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
+        self.subscription_text = scrolledtext.ScrolledText(suivi_frame, height=10, width=60)
+        self.subscription_text.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
 
-        self.order_text = scrolledtext.ScrolledText(suivi_frame, height=10, width=40)
-        self.order_text.grid(row=1, column=2, padx=5, pady=5, sticky="nsew")
+    def frame_order_portfolio(self):
+        # Frame pour Order et Portfolio (deuxième ligne, 2 colonnes)
+        order_portfolio_frame = ttk.LabelFrame(self.root, text="Order et Portfolio")
+        order_portfolio_frame.pack(fill="both", padx=5, pady=5, expand=True)
+
+        order_portfolio_frame.columnconfigure(0, weight=1)
+        order_portfolio_frame.columnconfigure(1, weight=1)
+        order_portfolio_frame.rowconfigure(1, weight=1)
+
+        # Header frames pour titre + bouton
+        order_header = ttk.Frame(order_portfolio_frame)
+        order_header.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        self.order_i = tk.StringVar()        
+        self.order_combo = ttk.Combobox(order_header, textvariable=self.order_i)
+        self.order_combo.pack(side="left", padx=5)
+        ttk.Label(order_header, text="Order").pack(side="left")
+        ttk.Button(order_header, text="Cancel Order", command=self.rien).pack(side="left", padx=5)
+
+        portfolio_header = ttk.Frame(order_portfolio_frame)
+        portfolio_header.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Label(portfolio_header, text="Portfolio").pack(side="left")
+        ttk.Button(portfolio_header, text="Actualiser", command=self.rien).pack(side="left", padx=5)
+
+        # Création des zones de texte avec une hauteur de 15 (1.5x la hauteur originale de 10)
+        self.order_text = scrolledtext.ScrolledText(order_portfolio_frame, height=15, width=60)
+        self.order_text.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+
+        self.portfolio_text = scrolledtext.ScrolledText(order_portfolio_frame, height=15, width=60)
+        self.portfolio_text.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
 
     def login(self):
         username = self.username_entry.get()
@@ -314,6 +363,9 @@ class APIGUI:
         status = await self.client.get_twap_status()
         self.twap_status_text.delete('1.0', tk.END)
         self.twap_status_text.insert(tk.END, status if status else "Aucun statut TWAP disponible.")
+
+    def rien():
+        pass
 
 if __name__ == "__main__":
     root = tk.Tk()
