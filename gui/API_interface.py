@@ -28,6 +28,14 @@ class APIGUI:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(3, weight=1)
 
+        self.frame_connexion()
+        self.frame_exchange_selection()
+        self.frame_symbol_selection()
+        self.frame_order_book()
+        self.frame_twap_order()
+        self.frame_twap_sub_follow()
+
+    def frame_connexion(self):
         # Frame pour connexion
         login_frame = ttk.LabelFrame(self.root, text="Connexion API")
         login_frame.pack(fill="x", padx=5, pady=5)
@@ -41,7 +49,8 @@ class APIGUI:
         self.password_entry.pack(side="left", padx=5)
         
         ttk.Button(login_frame, text="Login", command=self.login).pack(side="left", padx=5)
-        
+
+    def frame_exchange_selection(self):
         # Frame pour selection de l'exchange
         self.exchange_var = tk.StringVar()
         exchange_frame = ttk.LabelFrame(self.root, text="Exchanges")
@@ -53,6 +62,7 @@ class APIGUI:
         ttk.Button(exchange_frame, text="Charger Exchanges", command=self.update_exchanges).pack(side="left", padx=5)
         ttk.Button(exchange_frame, text="Sélectionner", command=self.update_symbols).pack(side="left", padx=5)
 
+    def frame_symbol_selection(self):
         # Frame pour selection de symboles
         self.symbol_var = tk.StringVar()
         symbol_frame = ttk.LabelFrame(self.root, text="Symboles")
@@ -63,9 +73,10 @@ class APIGUI:
         
         ttk.Button(symbol_frame, text="Charger Symbols", command=self.update_symbols).pack(side="left", padx=5)
         ttk.Button(symbol_frame, text="Obtenir Order Book", command=self.update_order_book).pack(side="left", padx=5)
-        
-        # Frame pour affichage des ordres et transactions (bids, asks et portfolio sur une seule ligne)
-        book_frame = ttk.LabelFrame(self.root, text="Order Book et Portfolio")
+
+    def frame_order_book(self):
+        # Frame pour affichage des ordres et transactions (bids, asks et statistique sur une seule ligne)
+        book_frame = ttk.LabelFrame(self.root, text="Order Book et Statistiques")
         book_frame.pack(fill="both", padx=5, pady=5)
 
         book_frame.columnconfigure(0, weight=1)
@@ -75,7 +86,7 @@ class APIGUI:
 
         ttk.Label(book_frame, text="Bids").grid(row=0, column=0, padx=5, pady=5)
         ttk.Label(book_frame, text="Asks").grid(row=0, column=1, padx=5, pady=5)
-        ttk.Label(book_frame, text="Portfolio").grid(row=0, column=2, padx=5, pady=5)
+        ttk.Label(book_frame, text="Statistiques").grid(row=0, column=2, padx=5, pady=5)
 
         self.bids_text = scrolledtext.ScrolledText(book_frame, height=10, width=40)
         self.bids_text.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
@@ -83,9 +94,10 @@ class APIGUI:
         self.asks_text = scrolledtext.ScrolledText(book_frame, height=10, width=40)
         self.asks_text.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
 
-        self.portfolio_text = scrolledtext.ScrolledText(book_frame, height=10, width=40)
-        self.portfolio_text.grid(row=1, column=2, padx=5, pady=5, sticky="nsew")
-
+        self.stat_text = scrolledtext.ScrolledText(book_frame, height=10, width=40)
+        self.stat_text.grid(row=1, column=2, padx=5, pady=5, sticky="nsew")
+    
+    def frame_twap_order(self):
         # Frame pour créer TWAP Order
         twap_frame = ttk.LabelFrame(self.root, text="Créer TWAP Order")
         twap_frame.pack(fill="x", padx=5, pady=5)
@@ -108,12 +120,28 @@ class APIGUI:
 
         ttk.Button(twap_frame, text="Créer TWAP", command=self.create_twap_order).pack(side="left", padx=5)
 
-        # Frame pour suivi TWAP
-        self.twap_status_frame = ttk.LabelFrame(self.root, text="Suivi TWAP")
-        self.twap_status_frame.pack(fill="both", expand=True, padx=5, pady=5)
+    def frame_twap_sub_follow(self):
+        # Frame pour suivi TWAP, des ordres et subscription
+        suivi_frame = ttk.LabelFrame(self.root, text="TWAP Order")
+        suivi_frame.pack(fill="both", padx=5, pady=5)
 
-        self.twap_status_text = scrolledtext.ScrolledText(self.twap_status_frame, height=10)
-        self.twap_status_text.pack(fill="both", expand=True, padx=5, pady=5)
+        suivi_frame.columnconfigure(0, weight=1)
+        suivi_frame.columnconfigure(1, weight=1)
+        suivi_frame.columnconfigure(2, weight=1)
+        suivi_frame.rowconfigure(1, weight=1)
+
+        ttk.Label(suivi_frame, text="Suivi TWAP").grid(row=0, column=0, padx=5, pady=5)
+        ttk.Label(suivi_frame, text="Subcription").grid(row=0, column=1, padx=5, pady=5)
+        ttk.Label(suivi_frame, text="Ordre").grid(row=0, column=2, padx=5, pady=5)
+
+        self.twap_status_text = scrolledtext.ScrolledText(suivi_frame, height=10, width=40)
+        self.twap_status_text.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+
+        self.subcription_text = scrolledtext.ScrolledText(suivi_frame, height=10, width=40)
+        self.subcription_text.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
+
+        self.order_text = scrolledtext.ScrolledText(suivi_frame, height=10, width=40)
+        self.order_text.grid(row=1, column=2, padx=5, pady=5, sticky="nsew")
 
     def login(self):
         username = self.username_entry.get()
@@ -143,10 +171,11 @@ class APIGUI:
     async def async_update_symbols(self):
         exchanges = await self.client.get_supported_exchanges()
         if exchanges:
-            pairs = await self.client.get_trading_pairs(exchanges[0])
+            pairs = await self.client.get_trading_pairs(exchanges[1])
             self.symbol_combo['values'] = pairs
             if pairs:
                 self.symbol_var.set(pairs[0])
+            
 
     def update_order_book(self):
         self.run_async(self.async_update_order_book())
@@ -178,11 +207,11 @@ class APIGUI:
         # Vérification et affichage des résultats
         self.bids_text.delete('1.0', tk.END)
         self.asks_text.delete('1.0', tk.END)
-        self.portfolio_text.delete('1.0', tk.END)
+        self.stat_text.delete('1.0', tk.END)
         if df.empty:
             self.bids_text.insert(tk.END, "Aucune donnée disponible.")
             self.asks_text.insert(tk.END, "Aucune donnée disponible.")
-            self.portfolio_text.insert(tk.END, "Aucune donnée disponible.")
+            self.stat_text.insert(tk.END, "Aucune donnée disponible.")
             return
         
         # Vérification que les colonnes existent
@@ -202,7 +231,59 @@ class APIGUI:
         # Affichage du portfolio fictif
         moyenne = df[4].mean() if not df.empty else 0
         portfolio_data = f"Total Assets: {len(df)}\nValeur Moyenne: {moyenne:.2f}"
-        self.portfolio_text.insert(tk.END, portfolio_data)
+        self.stat_text.insert(tk.END, portfolio_data)
+
+    def subscribe_to_symbol(self):
+        symbol = self.symbol_var.get()
+        if not symbol:
+            messagebox.showerror("Erreur", "Veuillez sélectionner un symbole!")
+            return
+            
+        self.run_async(self.async_subscribe_to_symbol(symbol))
+    
+    async def async_subscribe_to_symbol(self, symbol):
+        try:
+            await self.client.subscribe_symbol(symbol)
+            self.ws_subscribed_symbols.add(symbol)
+            messagebox.showinfo("Abonnement", f"Abonné au symbole {symbol}")
+            
+            # Mettre à jour l'affichage des abonnements
+            self.update_subscription_text()
+        except Exception as e:
+            messagebox.showerror("Erreur d'abonnement", str(e))
+    
+    def unsubscribe_from_symbol(self):
+        symbol = self.symbol_var.get()
+        if not symbol:
+            messagebox.showerror("Erreur", "Veuillez sélectionner un symbole!")
+            return
+            
+        self.run_async(self.async_unsubscribe_from_symbol(symbol))
+    
+    async def async_unsubscribe_from_symbol(self, symbol):
+        try:
+            await self.client.unsubscribe_symbol(symbol)
+            if symbol in self.ws_subscribed_symbols:
+                self.ws_subscribed_symbols.remove(symbol)
+            messagebox.showinfo("Désabonnement", f"Désabonné du symbole {symbol}")
+            
+            # Mettre à jour l'affichage des abonnements
+            self.update_subscription_text()
+        except Exception as e:
+            messagebox.showerror("Erreur de désabonnement", str(e))
+    
+    def update_subscription_text(self):
+        self.subscription_text.delete('1.0', tk.END)
+        
+        if not self.ws_subscribed_symbols:
+            self.subscription_text.insert(tk.END, "Aucun abonnement actif")
+            return
+            
+        self.subscription_text.insert(tk.END, "Abonnements actifs:\n")
+        self.subscription_text.insert(tk.END, "-------------------------\n")
+        
+        for symbol in self.ws_subscribed_symbols:
+            self.subscription_text.insert(tk.END, f"- {symbol}\n")
 
     def create_twap_order(self):
         exchange = self.exchange_var.get()
