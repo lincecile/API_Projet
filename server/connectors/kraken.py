@@ -53,9 +53,7 @@ class KrakenConnector(BaseConnector):
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 data = await response.json()
-                return [
-                    format_base(symbol_info["altname"]) for symbol_info in data["result"].values()
-                ]
+                return data["result"].keys()
 
     def standardize_klines(self, raw_data):
         return [
