@@ -14,7 +14,9 @@ class ClientSide:
         self.token: Optional[str] = None
         self.session: Optional[aiohttp.ClientSession] = None
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
+        self.ws_connected: bool = False
         self.keep_ws: Optional[asyncio.Task] = None
+        self.subscribed_symbols = set()
         
     async def __aenter__(self):
         """Permet l'utilisation du client"""
@@ -37,7 +39,7 @@ class ClientSide:
         """Maintien la connexion avec WebSocket"""
         try:
             while True:
-                if self.ws and not self.ws.close:
+                if self.ws and not self.ws_connected:
                     await self.ws.ping()
                 await asyncio.sleep(20)  # Ping toutes les 20 secondes
         except asyncio.CancelledError:
@@ -93,8 +95,7 @@ class ClientSide:
         """
         await self._ensure_connexion()
 
-        async with self.session.get(f"{self.base_url}/pairs/{exchange}",
-                                    params={"token": self.token}) as response:
+        async with self.session.get(f"{self.base_url}/pairs/{exchange}") as response:
             response.raise_for_status()
             return await response.json()
             
@@ -113,12 +114,15 @@ class ClientSide:
         """
         await self._ensure_connexion()
 
+        if self.token is None:
+            raise ValueError("Vous devez être authentifié pour créer un ordre")
+
         async with self.session.get(f"{self.base_url}/klines/{exchange}/{symbol}",
                                     params={"token": self.token, "interval": interval, "limit": limit}) as response:
             response.raise_for_status()
             return await response.json()
         
-    async def create_twap_order(self, exchange: str, symbol: str, side: str, quantity: float, slices: int, duration_seconds: int, limit_price: float = None):
+    async def create_twap_order(self, exchange: str, symbol: str, side: str, quantity: float, slices: int, duration_seconds: int, limit_price: Optional[float] = None):
         """
         Crée un ordre TWAP
 
@@ -135,6 +139,9 @@ class ClientSide:
             id de l'ordre crée
         """
         await self._ensure_connexion()
+
+        if self.token is None:
+            raise ValueError("Vous devez être authentifié pour créer un ordre")
 
         params = {"exchange": exchange,
             "symbol": symbol,
@@ -170,24 +177,20 @@ class ClientSide:
         
     async def connect_websocket(self):
         """Établit une connexion WebSocket et la maintien ouverte"""
-        if self.ws is None or self.ws.close:
-            self.ws = await websockets.connect(self.ws_url)
+        self.ws = await websockets.connect(self.ws_url)
+        self.ws_connected = True
+        print("Connexion WebSocket établie")
         
-        if self.keep_ws is None or self.keep_ws.done():
+        if self.keep_ws is None and self.ws_connected:
+            print("Lancement du ping WS")
             self.keep_ws = asyncio.create_task(self._keep_ws_connexion())
-        
+
     async def subscribe_symbol(self, symbol: str):
         """S'abonne aux mises à jour d'un symbole"""
-        if self.ws is None or self.ws.close:
-            await self.connect_websocket()
-
         await self.ws.send(json.dumps({"action": "subscribe","symbol": symbol}))
         
     async def unsubscribe_symbol(self, symbol: str):
         """Se désabonne des mises à jour d'un symbole"""
-        if self.ws is None or self.ws.close:
-            await self.connect_websocket()
-            
         await self.ws.send(json.dumps({"action": "unsubscribe","symbol": symbol}))
 
     async def listen_websocket_updates(self, callback: Callable[[Dict[str, Any]], None], duration_seconds: int = 60):
@@ -198,15 +201,13 @@ class ClientSide:
             callback: Fonction à appeler pour chaque message reçu
             duration_seconds: Durée d'écoute en secondes
         """
-        if self.ws is None or self.ws.close:
-            await self.connect_websocket()
-            
+
         start_time = datetime.datetime.now()
         end_time = start_time + datetime.timedelta(seconds=duration_seconds)
         print(start_time)
         try:
             while datetime.datetime.now() < end_time:
-                message = await asyncio.wait_for(self.ws.recv(), timeout=5.0)
+                message = await asyncio.wait_for(self.ws.recv(), timeout=60*3)
                 data = json.loads(message)
                 callback(data)
                 print('wait')
