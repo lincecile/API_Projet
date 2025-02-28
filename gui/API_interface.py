@@ -298,7 +298,6 @@ class APIGUI:
             messagebox.showerror("Erreur", "Veuillez entrer des valeurs numériques valides.")
             return
         
-        self.twap_status_text.delete('1.0', tk.END)
         self.twap_status_text.insert(tk.END, "Création de l'ordre TWAP en cours...\n")
         
         self.run_async(self.async_create_twap_order(exchange=exchange, symbol=symbol, 
@@ -333,14 +332,22 @@ class APIGUI:
     async def async_update_twap_status(self):
         status = await self.client.get_order_status(self.current_twap_order_id)
 
-        if status.get("status") in ["completed", "error"]:
-            print("Ordre terminé!")
-
-        self.twap_status_text.insert(tk.END, f"Ordre ID: {self.current_twap_order_id}\n")
+        self.twap_status_text.insert(tk.END, f"\nOrdre ID: {self.current_twap_order_id}\n")
         self.twap_status_text.insert(tk.END, f"Statut: {status.get('status', 'inconnu')}\n")
-        self.twap_status_text.insert(tk.END, f"Statut: {status}\n")
+        filtered_status = {k: v for k, v in status.items() if k != "executions"}
+        self.twap_status_text.insert(tk.END, f"Statut: {filtered_status}\n")
+        for exec in status.get("executions", []):
+            self.twap_status_text.insert(tk.END, f"Execution avancement: {exec}\n")
+
+        if status.get("status") in ["completed", "error"]:
+            self.current_twap_order_id = None
         
     def subscribe_to_symbol(self):
+
+        if self.client.token is None:
+            self.subscription_text.insert(tk.END, "Veuillez vous connecter d'abord.\n")
+            return
+        
         symbol = self.symbol_sub.get()
         if not symbol:
             messagebox.showerror("Erreur", "Veuillez sélectionner un symbole!")
@@ -368,7 +375,12 @@ class APIGUI:
             messagebox.showerror("Erreur d'abonnement", str(e))
     
     def unsubscribe_from_symbol(self):
-        symbol = self.symbol_var.get()
+
+        if self.client.token is None:
+            self.subscription_text.insert(tk.END, "Veuillez vous connecter d'abord.\n")
+            return
+        
+        symbol = self.symbol_sub.get()
         if not symbol:
             messagebox.showerror("Erreur", "Veuillez sélectionner un symbole!")
             return
@@ -393,16 +405,11 @@ class APIGUI:
             messagebox.showerror("Erreur de désabonnement", str(e))
     
     def update_subscription_text(self):
-            
-        self.subscription_text.insert(tk.END, "Abonnements actifs:\n")
-        self.subscription_text.insert(tk.END, "-------------------------\n")
-
-        if self.client.token is None:
-            self.subscription_text.insert(tk.END, "Veuillez vous connecter d'abord.\n")
-            return
         
         # Afficher les klines pour chaque symbole abonné
         for symbol in self.ws_subscribed_symbols:
+            self.subscription_text.insert(tk.END, "Abonnements actifs:\n")
+            self.subscription_text.insert(tk.END, "-------------------------\n")
             self.subscription_text.insert(tk.END, f"\n=== {symbol} ===\n", "heading")
             
             if symbol in self.klines_data and self.klines_data[symbol]:
@@ -421,6 +428,9 @@ class APIGUI:
                         self.subscription_text.insert(tk.END, f"Données incorrectes: {kline}\n")
             else:
                 self.subscription_text.insert(tk.END, "  Aucune donnée disponible\n")
+        
+        if not self.ws_subscribed_symbols:
+            self.subscription_text.insert(tk.END, "Aucun abonnement actif.\n")
 
     def start_klines_auto_update(self):
         """Démarre la mise à jour automatique des klines toutes les 30 secondes"""
