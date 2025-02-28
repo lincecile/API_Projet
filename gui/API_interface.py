@@ -6,6 +6,9 @@ import pandas as pd
 from client.client_side import ClientSide
 from client.client_credentials import Credentials
 
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+
 class APIGUI:
     def __init__(self, root):
         self.root = root
@@ -14,6 +17,8 @@ class APIGUI:
         self.client = ClientSide()
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self.start_loop, daemon=True).start()
+        
+        self.run_async(self.connect_and_listen_websocket())
         
         self.create_widgets()
 
@@ -27,6 +32,14 @@ class APIGUI:
     def run_async(self, coro):
         return asyncio.run_coroutine_threadsafe(coro, self.loop)
 
+    async def connect_and_listen_websocket(self):
+        await self.client.connect_websocket()
+        await self.client.listen_websocket_updates(self.on_websocket_update)
+    
+    def on_websocket_update(self, data):
+        if data["type"]=="order_book":
+            self.update_order_book(data)
+
     def create_widgets(self):
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(3, weight=1)
@@ -37,12 +50,14 @@ class APIGUI:
         self.twap_symbol_var = tk.StringVar()  # Pour les ordres TWAP
 
         self.frame_connexion()
-        self.frame_exchange_selection()
-        self.frame_symbol_selection()
+        self.frame_exchange_and_symbol_selection()
         self.frame_order_book()
+        self.frame_klines()
         self.frame_twap_order()
         self.frame_twap_sub_follow()
-        self.frame_order_portfolio()
+        # self.frame_order_portfolio()
+        
+        self.update_exchanges()
 
     def frame_connexion(self):
         # Frame pour connexion
@@ -74,17 +89,20 @@ class APIGUI:
         else:
             messagebox.showerror("Login", "Échec de la connexion!")
 
-    def frame_exchange_selection(self):
+    def frame_exchange_and_symbol_selection(self):
         # Frame pour selection de l'exchange
         self.exchange_var = tk.StringVar()
-        exchange_frame = ttk.LabelFrame(self.root, text="Exchanges")
-        exchange_frame.pack(fill="x", padx=5, pady=5)
+        exchange_and_symbol_frame = ttk.LabelFrame(self.root, text="Exchanges and Symbols")
+        exchange_and_symbol_frame.pack(fill="x", padx=5, pady=5)
 
-        self.exchange_combo = ttk.Combobox(exchange_frame, textvariable=self.exchange_var, state="readonly")
+        self.exchange_combo = ttk.Combobox(exchange_and_symbol_frame, textvariable=self.exchange_var, state="readonly")
+        self.exchange_combo.bind("<<ComboboxSelected>>", lambda e: self.update_symbols())
         self.exchange_combo.pack(side="left", padx=5)
-
-        ttk.Button(exchange_frame, text="Charger Exchanges", command=self.update_exchanges).pack(side="left", padx=5)
-        ttk.Button(exchange_frame, text="Sélectionner", command=self.update_symbols).pack(side="left", padx=5)
+        
+        self.symbol_var = tk.StringVar()
+        self.symbol_combo = ttk.Combobox(exchange_and_symbol_frame, textvariable=self.symbol_var)
+        self.symbol_combo.pack(side="left", padx=5)
+        self.symbol_combo.bind("<<ComboboxSelected>>", lambda e: self.update_symbol())
 
     def update_exchanges(self):
         self.run_async(self.async_update_exchanges())
@@ -92,21 +110,7 @@ class APIGUI:
     async def async_update_exchanges(self):
         exchanges = await self.client.get_supported_exchanges()
         if exchanges:
-            self.exchange_combo["values"] = ["Tous"] + exchanges
-            self.exchange_var.set("Tous")  # Par défaut, on sélectionne "Tous"
-
-    def frame_symbol_selection(self):
-        # Frame pour selection de symboles
-        self.symbol_var = tk.StringVar()
-        symbol_frame = ttk.LabelFrame(self.root, text="Symboles")
-        symbol_frame.pack(fill="x", padx=5, pady=5)
-        
-        self.symbol_combo = ttk.Combobox(symbol_frame, textvariable=self.symbol_var)
-        self.symbol_combo.pack(side="left", padx=5)
-        
-        ttk.Button(symbol_frame, text="Charger Symbols", command=self.update_symbols).pack(side="left", padx=5)
-        ttk.Button(symbol_frame, text="Obtenir Order Book", command=self.rien).pack(side="left", padx=5)
-        ttk.Button(symbol_frame, text="Analyser Order Book", command=self.rien).pack(side="left", padx=5)
+            self.exchange_combo["values"] =  exchanges
 
     def update_symbols(self):
         self.run_async(self.async_update_symbols())
@@ -116,6 +120,8 @@ class APIGUI:
         if exchanges:
             pairs = await self.client.get_trading_pairs(exchanges)
             
+            self.symbol_combo.delete(0, tk.END)
+            self.symbol_combo.set("Sélectionner")
             self.symbol_combo['values'] = pairs
             self.symbol_combo_sub['values'] = pairs
             self.twap_symbol_combo['values'] = pairs 
@@ -125,6 +131,44 @@ class APIGUI:
                 self.symbol_var.set(pairs[0])
                 self.symbol_sub.set(pairs[0])
                 self.twap_symbol_var.set(pairs[0])
+
+    def update_symbol(self):
+        symbol = self.symbol_var.get()
+        exchange = self.exchange_var.get()
+        self.fetch_and_display_klines(exchange, symbol)
+        self.subscribe_symbol(symbol)
+
+    def frame_klines(self):
+        klines_frame = ttk.LabelFrame(self.root, text="Klines")
+        klines_frame.pack(fill="both", padx=5, pady=5, expand=True)
+        self.klines_frame = klines_frame
+
+    def fetch_and_display_klines(self, *args):
+        self.run_async(self.async_fetch_and_display_klines(*args))
+
+    async def async_fetch_and_display_klines(self, exchange, symbol):
+        klines = await self.client.get_klines(exchange, symbol, "15m", 100)
+        
+        if not klines:
+            messagebox.showerror("Erreur", "Aucune donnée de klines disponible pour ce symbole.")
+            return
+
+        df = pd.DataFrame(klines, columns=["timestamp", "open", "high", "low", "close"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit='ns')
+        fig = Figure(figsize=(5, 4), dpi=100)
+        ax = fig.add_subplot()
+        (line,) = ax.plot(df["timestamp"], df["close"])
+        ax.set_xlabel("time [s]")
+        ax.set_ylabel("f(t)")
+        
+        for widget in self.klines_frame.winfo_children():
+            widget.destroy()
+
+        canvas = FigureCanvasTkAgg(fig, master=self.klines_frame) 
+        canvas.draw()
+
+        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
 
     def frame_order_book(self):
         # Frame pour affichage des ordres et transactions (bids, asks et statistique sur une seule ligne)
@@ -138,73 +182,45 @@ class APIGUI:
 
         ttk.Label(book_frame, text="Bids").grid(row=0, column=0, padx=5, pady=5)
         ttk.Label(book_frame, text="Asks").grid(row=0, column=1, padx=5, pady=5)
-        ttk.Label(book_frame, text="Statistiques").grid(row=0, column=2, padx=5, pady=5)
 
         self.bids_text = scrolledtext.ScrolledText(book_frame, height=10, width=40)
         self.bids_text.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
 
         self.asks_text = scrolledtext.ScrolledText(book_frame, height=10, width=40)
         self.asks_text.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
-
-        self.stat_text = scrolledtext.ScrolledText(book_frame, height=10, width=40)
-        self.stat_text.grid(row=1, column=2, padx=5, pady=5, sticky="nsew")
+    
+    def update_order_book(self, data):
         
-    def update_book(self):
-        self.run_async(self.async_update_book())
-
-    async def async_update_book(self):
-        symbol = self.symbol_var.get()
-        selected_exchange = self.exchange_var.get()
-        exchanges = await self.client.get_supported_exchanges()
-
-        if not symbol:
-            messagebox.showerror("Erreur", "Veuillez sélectionner un symbole!")
-            return
-
-        # On récupère les données pour tous les exchanges si "Tous" est sélectionné
-        if selected_exchange == 'Tous':
-            all_data = []
-            for exchange in exchanges:
-                data = await self.client.get_klines(exchange, symbol)
-                if data:
-                    df = pd.DataFrame(data)
-                    df.insert(0, "Exchange", exchange)  # Ajouter colonne "Exchange"
-                    all_data.append(df)
-
-            df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
-        else:
-            data = await self.client.get_klines(selected_exchange, symbol)
-            df = pd.DataFrame(data) if data else pd.DataFrame()
-
-        # Vérification et affichage des résultats
-        self.bids_text.delete('1.0', tk.END)
-        self.asks_text.delete('1.0', tk.END)
-        self.stat_text.delete('1.0', tk.END)
-        if df.empty:
-            self.bids_text.insert(tk.END, "Aucune donnée disponible.")
-            self.asks_text.insert(tk.END, "Aucune donnée disponible.")
-            self.stat_text.insert(tk.END, "Aucune donnée disponible.")
+        current_symbol = self.symbol_var.get()
+        
+        if data["symbol"] != current_symbol:
             return
         
-        # Vérification que les colonnes existent
-        if df.shape[1] < 5:
-            messagebox.showerror("Erreur", "Données de l'order book incorrectes.")
+        bids = data["bids"]
+        asks = data["asks"]
+        
+        self.bids_text.delete("1.0", tk.END)
+        self.asks_text.delete("1.0", tk.END)
+        
+        for i, (price, quantity) in enumerate(bids):
+            self.bids_text.insert(tk.END, f"{i+1}. Price: {price}, Quantity: {quantity}\n")
+            
+        for i, (price, quantity) in enumerate(asks):
+            self.asks_text.insert(tk.END, f"{i+1}. Price: {price}, Quantity: {quantity}\n")
+   
+   
+    def subscribe_symbol(self, symbol): 
+        if symbol in self.ws_subscribed_symbols:
             return
-
-        df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], unit='ns', errors='coerce')
-
-        # Séparation des bids et asks (hypothèse : ordres triés par prix)
-        bids = df.iloc[:5].to_string(index=False)  # Premières lignes (simulées comme "bids")
-        asks = df.iloc[-5:].to_string(index=False)  # Dernières lignes (simulées comme "asks")
-
-        self.bids_text.insert(tk.END, bids)
-        self.asks_text.insert(tk.END, asks)
-
-        # Affichage du portfolio fictif
-        moyenne = df[4].mean() if not df.empty else 0
-        stat = f"Total Assets: {len(df)}\nValeur Moyenne: {moyenne:.2f}"
-        self.stat_text.insert(tk.END, stat)
-
+        
+        self.run_async(self.async_subscribe_symbol(symbol))
+        
+    async def async_subscribe_symbol(self, symbol):
+        await self.client.subscribe_symbol(symbol)
+        self.ws_subscribed_symbols.add(symbol)
+        print(f"Abonné à {symbol}")
+        self.subscription_text.insert(tk.END, f"Abonné à {symbol}\n")
+   
     ####################################################################################################################################
     ####################################################################################################################################
     ################################################### TWAP ORDER ET SUBSCRIPTION #####################################################
@@ -258,13 +274,10 @@ class APIGUI:
         
         sub_header = ttk.Frame(suivi_frame)
         sub_header.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-        ttk.Label(sub_header, text="Subscription : Klines").pack(side="left")
 
         self.symbol_sub = tk.StringVar()        
         self.symbol_combo_sub = ttk.Combobox(sub_header, textvariable=self.symbol_sub)
         self.symbol_combo_sub.pack(side="left", padx=5)
-        ttk.Button(sub_header, text="S'abonner", command=self.subscribe_to_symbol).pack(side="left", padx=5)
-        ttk.Button(sub_header, text="Se désabonner", command=self.unsubscribe_from_symbol).pack(side="left", padx=5)
 
         self.twap_status_text = scrolledtext.ScrolledText(suivi_frame, height=10, width=60)
         self.twap_status_text.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
@@ -341,165 +354,6 @@ class APIGUI:
 
         if status.get("status") in ["completed", "error"]:
             self.current_twap_order_id = None
-        
-    def subscribe_to_symbol(self):
-
-        if self.client.token is None:
-            self.subscription_text.insert(tk.END, "Veuillez vous connecter d'abord.\n")
-            return
-        
-        symbol = self.symbol_sub.get()
-        if not symbol:
-            messagebox.showerror("Erreur", "Veuillez sélectionner un symbole!")
-            return
-            
-        self.run_async(self.async_subscribe_to_symbol(symbol))
-    
-    async def async_subscribe_to_symbol(self, symbol):
-        try:
-            if not hasattr(self.client, 'ws') or not self.client.ws:
-                await self.client.connect_websocket()
-
-            await self.client.subscribe_symbol(symbol)
-            self.ws_subscribed_symbols.add(symbol)
-            messagebox.showinfo("Abonnement", f"Abonné au symbole {symbol}")
-            
-            # Récupérer les klines pour le symbole
-            exchange = self.exchange_var.get()
-            if exchange and exchange != "Tous":
-                await self.fetch_klines_for_symbol(exchange, symbol)
-            
-            # Mettre à jour l'affichage des abonnements
-            self.update_subscription_text()
-        except Exception as e:
-            messagebox.showerror("Erreur d'abonnement", str(e))
-    
-    def unsubscribe_from_symbol(self):
-
-        if self.client.token is None:
-            self.subscription_text.insert(tk.END, "Veuillez vous connecter d'abord.\n")
-            return
-        
-        symbol = self.symbol_sub.get()
-        if not symbol:
-            messagebox.showerror("Erreur", "Veuillez sélectionner un symbole!")
-            return
-            
-        self.run_async(self.async_unsubscribe_from_symbol(symbol))
-    
-    async def async_unsubscribe_from_symbol(self, symbol):
-        try:
-            if symbol in self.ws_subscribed_symbols:
-                self.ws_subscribed_symbols.remove(symbol)
-                
-                # Supprimer les données klines pour ce symbole
-                if symbol in self.klines_data:
-                    del self.klines_data[symbol]
-                
-                messagebox.showinfo("Désabonnement", f"Désabonné du symbole {symbol}")
-            
-            # Mettre à jour l'affichage des abonnements
-            self.update_subscription_text()
-            
-        except Exception as e:
-            messagebox.showerror("Erreur de désabonnement", str(e))
-    
-    def update_subscription_text(self):
-        
-        # Afficher les klines pour chaque symbole abonné
-        for symbol in self.ws_subscribed_symbols:
-            self.subscription_text.insert(tk.END, "Abonnements actifs:\n")
-            self.subscription_text.insert(tk.END, "-------------------------\n")
-            self.subscription_text.insert(tk.END, f"\n=== {symbol} ===\n", "heading")
-            
-            if symbol in self.klines_data and self.klines_data[symbol]:
-                klines = self.klines_data[symbol]
-                # En-tête des colonnes
-                self.subscription_text.insert(tk.END, "Date/Heure          | Open    | High    | Low     | Close   | Volume\n")
-                self.subscription_text.insert(tk.END, "-" * 75 + "\n")
-                
-                # Formater et afficher les données klines
-                for kline in klines[:10]:  # Limiter à 10 klines pour chaque symbole
-                    try:
-                        timestamp = pd.to_datetime(kline['timestamp'], unit='ns', errors='coerce')
-                        self.subscription_text.insert(tk.END, 
-                            f"{timestamp:%Y-%m-%d %H:%M} | {kline['open']:<7.2f} | {kline['high']:<7.2f} | {kline['low']:<7.2f} | {kline['close']:<7.2f} | {kline['volume']:<7.2f}\n")
-                    except (KeyError, TypeError):
-                        self.subscription_text.insert(tk.END, f"Données incorrectes: {kline}\n")
-            else:
-                self.subscription_text.insert(tk.END, "  Aucune donnée disponible\n")
-        
-        if not self.ws_subscribed_symbols:
-            self.subscription_text.insert(tk.END, "Aucun abonnement actif.\n")
-
-    def start_klines_auto_update(self):
-        """Démarre la mise à jour automatique des klines toutes les 30 secondes"""
-        self.run_async(self.async_update_all_klines())
-        # Planifier la prochaine mise à jour
-        self.root.after(10000, self.start_klines_auto_update)
-
-    async def async_update_all_klines(self):
-        """Met à jour les klines pour tous les symboles abonnés"""
-        exchange = self.exchange_var.get()
-        if exchange and exchange != "Tous":
-            for symbol in self.ws_subscribed_symbols:
-                await self.fetch_klines_for_symbol(exchange, symbol)
-            # Mettre à jour l'affichage
-            self.update_subscription_text()
-
-    async def fetch_klines_for_symbol(self, exchange, symbol, interval="1m", limit=10):
-        """Récupère les klines pour un symbole spécifique"""
-        try:
-            klines = await self.client.get_klines(exchange, symbol, interval=interval, limit=limit)
-            if klines:
-                self.klines_data[symbol] = klines
-                return True
-            return False
-        except Exception as e:
-            print(f"Erreur lors de la récupération des klines pour {symbol}: {e}")
-            return False
-
-    ####################################################################################################################################
-    ####################################################################################################################################
-    ####################################################### ORDER ET PORFOLIO ##########################################################
-    ####################################################################################################################################
-    ####################################################################################################################################
-
-    def frame_order_portfolio(self):
-        # Frame pour Order et Portfolio (deuxième ligne, 2 colonnes)
-        order_portfolio_frame = ttk.LabelFrame(self.root, text="Order et Portfolio")
-        order_portfolio_frame.pack(fill="both", padx=5, pady=5, expand=True)
-
-        order_portfolio_frame.columnconfigure(0, weight=1)
-        order_portfolio_frame.columnconfigure(1, weight=1)
-        order_portfolio_frame.rowconfigure(1, weight=1)
-
-        # Header frames pour titre + bouton
-        order_header = ttk.Frame(order_portfolio_frame)
-        order_header.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-        ttk.Label(order_header, text="Order").pack(side="left")
-
-        self.order_i = tk.StringVar()        
-        self.order_combo = ttk.Combobox(order_header, textvariable=self.order_i)
-        self.order_combo.pack(side="left", padx=5)
-        ttk.Button(order_header, text="Cancel Order", command=self.rien).pack(side="left", padx=5)
-
-        portfolio_header = ttk.Frame(order_portfolio_frame)
-        portfolio_header.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-        ttk.Label(portfolio_header, text="Portfolio").pack(side="left")
-        ttk.Button(portfolio_header, text="Actualiser", command=self.rien).pack(side="left", padx=5)
-
-        # Création des zones de texte avec une hauteur de 15 (1.5x la hauteur originale de 10)
-        self.order_text = scrolledtext.ScrolledText(order_portfolio_frame, height=15, width=60)
-        self.order_text.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
-
-        self.portfolio_text = scrolledtext.ScrolledText(order_portfolio_frame, height=15, width=60)
-        self.portfolio_text.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
-  
-
-
-    def rien(self):
-        pass
 
 if __name__ == "__main__":
     root = tk.Tk()

@@ -35,10 +35,25 @@ class ClientWebSocketManager:
         while True:
             await asyncio.sleep(1)
             data_to_send = []
-            for symbol in self.subscriptions:
+            for symbol in self.subscriptions: 
+                order_books = []
                 for exchange in subscription_manager.exchange_connectors:
                     order_book = subscription_manager.exchange_connectors[exchange].order_book
-                    if symbol in order_book:
-                        data_to_send.append(order_book[symbol])
+                    order_books.append(order_book[symbol])
+                     
+                merged_order_book = {"bids": [], "asks": []}
+                for order_book in order_books:
+                    merged_order_book["bids"].extend(order_book["bids"])
+                    merged_order_book["asks"].extend(order_book["asks"])
+                
+                merged_order_book["bids"].sort(key=lambda x: x[0], reverse=True)
+                merged_order_book["asks"].sort(key=lambda x: x[0])
+                
+                data_to_send.append({
+                    "type":"order_book",
+                    "symbol": symbol,
+                    **merged_order_book
+                })
+                
             if len(data_to_send)>0:
                 await self.websocket.send_text(json.dumps(data_to_send))

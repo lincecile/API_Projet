@@ -114,11 +114,8 @@ class ClientSide:
         """
         await self._ensure_connexion()
 
-        if self.token is None:
-            raise ValueError("Vous devez être authentifié pour créer un ordre")
-
         async with self.session.get(f"{self.base_url}/klines/{exchange}/{symbol}",
-                                    params={"token": self.token, "interval": interval, "limit": limit}) as response:
+                                    params={"interval": interval, "limit": limit}) as response:
             response.raise_for_status()
             return await response.json()
         
@@ -193,7 +190,7 @@ class ClientSide:
         """Se désabonne des mises à jour d'un symbole"""
         await self.ws.send(json.dumps({"action": "unsubscribe","symbol": symbol}))
 
-    async def listen_websocket_updates(self, callback: Callable[[Dict[str, Any]], None], duration_seconds: int = 60):
+    async def listen_websocket_updates(self, callback: Callable[[Dict[str, Any]], None]):
         """
         Mises à jour WebSocket pendant une durée spécifiée et applique le callback à chaque message
         
@@ -202,19 +199,12 @@ class ClientSide:
             duration_seconds: Durée d'écoute en secondes
         """
 
-        start_time = datetime.datetime.now()
-        end_time = start_time + datetime.timedelta(seconds=duration_seconds)
-        print(start_time)
         try:
-            while datetime.datetime.now() < end_time:
-                message = await asyncio.wait_for(self.ws.recv(), timeout=60*3)
+            while True: 
+                message = await self.ws.recv()
                 data = json.loads(message)
-                callback(data)
-                print('wait')
-                
-        except asyncio.TimeoutError:
-            # Timeout
-            pass
+                for event in data:
+                    callback(event)
         except Exception as e:
             print(f"Erreur lors de l'écoute WebSocket: {e}")
             

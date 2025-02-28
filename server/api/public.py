@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, Request
 from typing import List, Dict, Any
 import asyncio
 from datetime import datetime  # Ajout de l'import manquant
-from server.connectors import BinanceConnector, KrakenConnector
+from server.connectors import BaseConnector, BinanceConnector, KrakenConnector
 from server.auth.auth_manager import AuthenticationManager
 from server.services.websocket_manager import ClientWebSocketManager
 from server.services.subscription_manager import SubscriptionManager
@@ -24,7 +24,7 @@ app = FastAPI(lifespan=startup)
 auth_manager = AuthenticationManager()
 
 # Initialisation des connecteurs d'exchanges
-EXCHANGES = {"binance": BinanceConnector(), "kraken": KrakenConnector()}
+EXCHANGES: Dict[str, BaseConnector] = {"binance": BinanceConnector(), "kraken": KrakenConnector()}
 
 
 @app.post("/auth/login")
