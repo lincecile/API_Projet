@@ -28,7 +28,7 @@ async def main():
                 # klines des dernieres paires d'un symbole
                 symbol = pairs[0]                    
                 klines = await client.get_klines(exchanges[0], symbol, interval="1h", limit=100)
-                print(f"5 dernieres klines pour {symbol} chez {exchanges[0]}:")
+                print(f"100 dernieres klines pour {symbol} chez {exchanges[0]}:")
                 for kline in klines:
                     time_str = pd.to_datetime(kline['timestamp'], unit='ns', errors='coerce')
                     print(f"  {time_str} - Open: {kline['open']}, High: {kline['high']}, Low: {kline['low']}, Close: {kline['close']}, Volume: {kline['volume']}")

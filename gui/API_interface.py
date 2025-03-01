@@ -387,3 +387,10 @@ class APIGUI:
         
         await asyncio.sleep(2)
         self.run_async(self.async_update_twap_status())
+
+
+if __name__ == "__main__":
+    # Lancer l'interface Tkinter après que le serveur soit bien lancé
+    root = tk.Tk()
+    app = APIGUI(root)
+    root.mainloop()
