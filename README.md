@@ -41,9 +41,9 @@ uvicorn server.main:app
 
 ### Client
 
-The client component is designed to interact with the server to fetch market data and execute trades. Below is an example of how to use the client.
+The client component is designed to interact with the server to fetch market data and execute trades. Below are several examples of how to use the client.
 
-[client_exemple.py](client/client_exemple.py) demonstrates how to use the client to log in, fetch supported exchanges, get trading pairs, retrieve klines, connect to WebSocket, subscribe to real-time data, create a TWAP order, and track the order status.
+In the directory named [Exemple](client/exemple/), several examples demonstrate how to use the client to log in, fetch supported exchanges, get trading pairs, retrieve klines, connect to WebSocket, subscribe to real-time data, create a TWAP order, and track the order status.
 
 ### Authentication feature
 
@@ -56,11 +56,11 @@ python ./server/auth/manage_users.py
 
 ### GUI
 
-We have extended this project by creating a simple [GUI](gui/Interface.py), allowing the user to test the client implementation.
+We have extended this project by creating a simple [GUI](gui/API_interface.py), allowing the user to test the client implementation.
 
 To open it, please run the following command : 
 ```sh
-python ./gui/Interface.py
+python ./gui/API_interface.py
 ```
 
 ## API Documentation

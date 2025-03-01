@@ -27,7 +27,7 @@ class APIGUI:
         self.klines_data = {}
 
     def create_scrollable_frame(self):
-        self.canvas = tk.Canvas(self.root, width=770, height=1000)
+        self.canvas = tk.Canvas(self.root, width=715, height=1000)
         self.scrollable_frame = ttk.Frame(self.canvas)
         self.scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
@@ -387,8 +387,3 @@ class APIGUI:
         
         await asyncio.sleep(2)
         self.run_async(self.async_update_twap_status())
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = APIGUI(root)
-    root.mainloop()
