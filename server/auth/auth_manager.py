@@ -2,13 +2,13 @@ from fastapi import HTTPException
 from werkzeug.security import check_password_hash
 import secrets
 from typing import Optional
-from .credentials import USERS
+from .credentials import users
 
 
 class AuthenticationManager:
     def __init__(self):
         # Charge la config des users depuis le fichier credentials.py
-        self.users = USERS
+        self.users = users
         # Dict pour stocker les tokens de chaque user
         self.tokens = {}
         # Set pour garder la trace des tokens qui ne sont plus valides
