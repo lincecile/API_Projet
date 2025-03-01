@@ -43,7 +43,11 @@ The client component is designed to interact with the server to fetch market dat
 ### Authentication feature
 
 Default username and passwords are set to "Tristan".
-If you wish to modify/add credentials, please look at [this file](server/auth/credentials.py) and use werkzeug.security.generate_password_hash().
+If you wish to modify/add credentials, please look at [this script](server/auth/manage_users.py) and run : 
+```sh
+python ./server/auth/manage_users.py
+```
+
 
 ### GUI
 
