@@ -1,21 +1,59 @@
+# Python API - Cryptocurrency Market Data & TWAP Paper Trading API
 
-parti exchange avec une seule plateforme
+This project provides a Python API for accessing cryptocurrency market data and implementing a TWAP (Time-Weighted Average Price) paper trading strategy. It is part of our curriculum at University Paris Dauphine-PSL for the first semester of the M272 "Economics and Financial Engineering". 
 
-parti display avec 2 carnet d'ordre
+It aims to teach us the main concepts of APIs and how to use them in Python by providing an environment for cryptocurrency mock-trading, using Binance and Kraken.
 
-1 ordre = 1 token
-permettre au client d'envoyer plusieurs ordres en meme temps mais token different
-permettre au client d'indiquer une certaine timeline ex: toutes les minutes pdt 20 min essayer d'executer l'ordre selon le carnet d'ordre
-chopper les carnets d'ordres des plateformes
+## Features
 
-si les deux plateformes ont le meme ask, mettre un choix par defaut d'executer sur tel ou tel plateforme
-indiquer aussi le niveau de liquidité sur chacune des plateformes (size de l'ordre dans le carnet)
+### Server Component
+The server component handles the backend logic and data processing. It is located in the [server](server/) directory.
 
-afficher à l'utilisateur l'avancement de sa requete
-afficher des stats: % d'ordre executer etc.
+### Client Component
+The client component interacts with the server to fetch market data and execute trades. It is located in the [client](client/) directory.
 
-utilisation swagger pour la doc, indiquer les liens où retrouver le swagger
-ex: '''
-Launch server then open http://localhost:8000/redoc or http://localhost:8000/docs
-'''
+### General User Interface
+The GUI provides a user-friendly interface for interacting with the API. It is located in the [gui](gui/) directory.
 
+## Installation
+
+To install the required dependencies, run:
+```sh
+pip install -r requirements.txt
+```
+Then : 
+```sh
+pip install -e .
+```
+## Usage
+
+### Server startup
+
+To use this tool, you first have to start the server :
+```sh
+python ./server/services/main.py
+```
+
+### Client
+
+The client component is designed to interact with the server to fetch market data and execute trades. Below is an example of how to use the client.
+
+[client_exemple.py](client/client_exemple.py) demonstrates how to use the client to log in, fetch supported exchanges, get trading pairs, retrieve klines, connect to WebSocket, subscribe to real-time data, create a TWAP order, and track the order status.
+
+### Authentication feature
+
+Default username and passwords are set to "Tristan".
+If you wish to modify/add credentials, please look at [this file](server/auth/credentials.py) and use werkzeug.security.generate_password_hash().
+
+### GUI
+
+We have extended this project by creating a simple [GUI](gui/Interface.py), allowing the user to test the client implementation.
+
+To open it, please run the following command : 
+```sh
+python ./gui/Interface.py
+```
+
+## API Documentation
+
+To access the Swagger API documentation, please open [this link](http://localhost:8000/docs#/).
