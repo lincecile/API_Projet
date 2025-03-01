@@ -26,8 +26,8 @@ auth_manager = AuthenticationManager()
 EXCHANGES: Dict[str, BaseConnector] = {"binance": BinanceConnector(), "kraken": KrakenConnector()}
 
 
-@app.post("/auth/login")
-async def login(username: str, password: str):
+@app.post("/auth/login", tags=["Authentication"])
+async def login(username: str, password: str, tags=["Authentication"]):
     """Endpoint de login qui retourne un token"""
     token = auth_manager.authenticate_user(username, password)
     if not token:
@@ -36,14 +36,14 @@ async def login(username: str, password: str):
 
 
 # Route publique (pas d'authentification requise)
-@app.get("/exchanges", response_model=List[str])
+@app.get("/exchanges", response_model=List[str], tags=["Exchanges"])
 async def get_supported_exchanges():
     """Liste tous les exchanges supportés"""
     return list(EXCHANGES.keys())
 
 
 # Routes protégées (authentification requise)
-@app.get("/pairs/{exchange}", response_model=List[str])
+@app.get("/pairs/{exchange}", response_model=List[str], tags=["Symbols"])
 async def get_trading_pairs(exchange: str):
     """Obtient les paires de trading disponibles"""
     exchange = exchange.lower()
@@ -57,7 +57,7 @@ async def get_trading_pairs(exchange: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/klines/{exchange}/{symbol}", response_model=List[Dict[str, Any]])
+@app.get("/klines/{exchange}/{symbol}", response_model=List[Dict[str, Any]], tags=["Symbols"])
 async def get_klines(
         exchange: str, symbol: str, interval: str = "1m", limit: int = 10
 ):
@@ -79,7 +79,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.handle(subscription_manager=websocket.app.state.subscription_manager)
 
 
-@app.post("/orders/twap")
+@app.post("/orders/twap", tags=["Orders"])
 async def create_twap_order(
         exchange: str,
         symbol: str,
@@ -127,7 +127,7 @@ async def create_twap_order(
     return {"order_id": order_id, "status": "accepted"}
 
 
-@app.get("/orders/{token_id}")
+@app.get("/orders/{token_id}", tags=["Orders"])
 async def get_order_status(token_id: str, token: str):
     """Récupère le statut d'un ordre TWAP"""
     # Vérifier l'authentification
