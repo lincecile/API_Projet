@@ -36,11 +36,21 @@ def modify_user(username, password):
     save_users(users)
     print(f"User '{username}' modified successfully.")
 
+def delete_user(username):
+    users = load_users()
+    if username not in users:
+        print(f"User '{username}' does not exist.")
+        return
+    del users[username]
+    save_users(users)
+    print(f"User '{username}' deleted successfully.")
+
 def main():
     while True:
         print("1. Add User")
         print("2. Modify User")
-        print("3. Exit")
+        print("3. Delete User")
+        print("4. Exit")
         choice = input("Enter your choice: ")
         if choice == '1':
             username = input("Enter username: ")
@@ -51,6 +61,9 @@ def main():
             password = input("Enter new password: ")
             modify_user(username, password)
         elif choice == '3':
+            username = input("Enter username: ")
+            delete_user(username)
+        elif choice == '4':
             break
         else:
             print("Invalid choice. Please try again.")
