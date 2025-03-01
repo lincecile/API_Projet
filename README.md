@@ -12,7 +12,7 @@ The server component handles the backend logic and data processing. It is locate
 ### Client Component
 The client component interacts with the server to fetch market data and execute trades. It is located in the [client](client/) directory.
 
-### General User Interface
+### Graphical User Interface
 The GUI provides a user-friendly interface for interacting with the API. It is located in the [gui](gui/) directory.
 
 ## Installation
