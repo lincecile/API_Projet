@@ -3,12 +3,15 @@ from typing import Set, Tuple
 import json
 import asyncio
 from server.services.subscription_manager import SubscriptionManager
+from server.auth.auth_manager import AuthenticationManager
 
 class ClientWebSocketManager:
     
-    def __init__(self, websocket: WebSocket):
+    def __init__(self, websocket: WebSocket, auth_manager:AuthenticationManager):
         self.websocket = websocket
         self.subscriptions: Set[str] = set()
+        self.authenticated = False
+        self.auth_manager = auth_manager
         
 
     async def handle(self, subscription_manager: SubscriptionManager):
@@ -19,7 +22,25 @@ class ClientWebSocketManager:
                 msg = await self.websocket.receive_text()
                 data = json.loads(msg)
                 action = data.get("action")
-                symbol = data.get("symbol").upper()
+                symbol = data.get("symbol", "").upper()
+                
+                if action =="authenticate": 
+                    self.authenticated = True
+                    token = data.get("token")
+                    try: 
+                        username = self.auth_manager.verify_token(token, raise_http=False)
+                    except:
+                        await self.websocket.send_text(json.dumps({"error": "Invalid token"}))
+                        username = None
+                        pass
+                    if username is not None:
+                        self.auth_manager = True    
+                        await self.websocket.send_text(json.dumps({"authenticated": True}))
+                    continue
+                
+                if not self.authenticated: 
+                    continue
+                
                 if action == "subscribe":
                     self.subscriptions.add(symbol)
                     await subscription_manager.add_subscription(symbol)

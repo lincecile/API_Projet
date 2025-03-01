@@ -68,6 +68,14 @@ class ClientSide:
             data = await response.json()
             self.token = data["token"]
             return True
+        
+    async def ws_authenticate(self):
+        """Authentifie l'utilisateur sur WebSocket"""
+        if self.token is None:
+            raise ValueError("Vous devez être authentifié pour vous connecter à WebSocket")
+        
+        
+        await self.ws.send(json.dumps({"action": "authenticate", "token": self.token}))
                  
     async def get_supported_exchanges(self):
         """
@@ -204,7 +212,10 @@ class ClientSide:
                 message = await self.ws.recv()
                 data = json.loads(message)
                 for event in data:
-                    callback(event)
+                    try:
+                        callback(event)
+                    except Exception as e:
+                        print("Error in callback", e)
         except Exception as e:
             print(f"Erreur lors de l'écoute WebSocket: {e}")
             

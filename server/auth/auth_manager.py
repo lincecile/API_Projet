@@ -23,38 +23,18 @@ class AuthenticationManager:
             return self.tokens[username]
         return None
 
-    def verify_token(self, token: str) -> str:
+    def verify_token(self, token: str, raise_http=True) -> str:
         # Première vérif basique
         if not token:
-            raise HTTPException(status_code=401, detail="Token manquant")
+            raise HTTPException(status_code=401, detail="Token manquant") if raise_http else Exception("Token manquant")
 
         # On check si le token a pas été révoqué avant
         if token in self.revoked_tokens:
-            raise HTTPException(status_code=401, detail="Ce token a été révoqué")
+            raise HTTPException(status_code=401, detail="Ce token a été révoqué") if raise_http else Exception("Ce token a été révoqué")
 
         # On parcourt les tokens actifs pour trouver l'user correspondant
         for username, stored_token in self.tokens.items():
             if stored_token == token:
                 return username
 
-        raise HTTPException(status_code=401, detail="Token invalide")
-
-    def revoke_token(self, token: str) -> None:
-        # Check si le token existe quelque part dans nos tokens actifs
-        if token not in [t for t in self.tokens.values()]:
-            raise HTTPException(status_code=400, detail="Token invalide")
-
-        # On blacklist le token
-        self.revoked_tokens.add(token)
-
-        # Faut aussi l'exclure des token actifs
-        for username, stored_token in self.tokens.items():
-            if stored_token == token:
-                del self.tokens[username]
-                break
-
-    def generate_api_key(self, username: str) -> str:
-        # On vérifie d'abord que l'user existe
-        if username not in self.users:
-            raise HTTPException(status_code=400, detail="Utilisateur invalide")
-        return secrets.token_urlsafe(32)
+        raise (HTTPException(status_code=401, detail="Token invalide") if raise_http else Exception("Token invalide"))

@@ -76,7 +76,7 @@ async def get_klines(
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    manager = ClientWebSocketManager(websocket)
+    manager = ClientWebSocketManager(websocket, auth_manager)
     await manager.handle(subscription_manager=websocket.app.state.subscription_manager)
 
 
