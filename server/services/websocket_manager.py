@@ -9,6 +9,7 @@ class ClientWebSocketManager:
     def __init__(self, websocket: WebSocket):
         self.websocket = websocket
         self.subscriptions: Set[str] = set()
+        
 
     async def handle(self, subscription_manager: SubscriptionManager):
         await self.websocket.accept()
@@ -39,6 +40,8 @@ class ClientWebSocketManager:
                 order_books = []
                 for exchange in subscription_manager.exchange_connectors:
                     order_book = subscription_manager.exchange_connectors[exchange].order_book
+                    if not symbol in order_book:
+                        continue
                     order_books.append(order_book[symbol])
                      
                 merged_order_book = {"bids": [], "asks": []}

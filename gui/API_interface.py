@@ -155,11 +155,18 @@ class APIGUI:
 
         df = pd.DataFrame(klines, columns=["timestamp", "open", "high", "low", "close"])
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit='ns')
-        fig = Figure(figsize=(5, 4), dpi=100)
+        fig = Figure(figsize=(10, 6), dpi=100)
         ax = fig.add_subplot()
-        (line,) = ax.plot(df["timestamp"], df["close"])
-        ax.set_xlabel("time [s]")
-        ax.set_ylabel("f(t)")
+
+        # Plot candlesticks
+        for idx, row in df.iterrows():
+            color = 'green' if row['close'] >= row['open'] else 'red'
+            ax.plot([row['timestamp'], row['timestamp']], [row['low'], row['high']], color=color)
+            ax.plot([row['timestamp'], row['timestamp']], [row['open'], row['close']], color=color, linewidth=5)
+
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Price")
+        ax.set_title(f"Candlestick chart for {symbol}")
         
         for widget in self.klines_frame.winfo_children():
             widget.destroy()
