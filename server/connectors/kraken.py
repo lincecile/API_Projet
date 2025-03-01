@@ -3,7 +3,6 @@ from typing import List, Dict, Any
 from server.connectors.base_connector import BaseConnector, BaseExchangeWSConnection
 from server.services.formatters import format_kraken, format_base
 import pandas as pd
-import asyncio
 from fastapi import HTTPException
 import json
 

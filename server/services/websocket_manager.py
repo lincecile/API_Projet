@@ -1,5 +1,5 @@
 from fastapi import WebSocket, WebSocketDisconnect
-from typing import Set, Tuple
+from typing import Set
 import json
 import asyncio
 from server.services.subscription_manager import SubscriptionManager

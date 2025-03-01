@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Set
 import websockets
-import asyncio
 
 
 class BaseConnector(ABC):

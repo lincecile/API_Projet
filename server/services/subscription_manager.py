@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict
 from server.connectors.kraken import KrakenWSConnection
 from server.connectors.binance import BinanceWSConnection
 from server.connectors.base_connector import BaseExchangeWSConnection

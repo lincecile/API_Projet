@@ -31,7 +31,12 @@ pip install -e .
 
 To use this tool, you first have to start the server :
 ```sh
-python ./server/services/main.py
+python ./server/main.py
+```
+
+Alternativaly you can use :
+```sh
+uvicorn server.main:app
 ```
 
 ### Client

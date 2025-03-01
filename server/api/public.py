@@ -1,7 +1,6 @@
-from fastapi import FastAPI, HTTPException, WebSocket, Request
+from fastapi import FastAPI, HTTPException, WebSocket
 from typing import List, Dict, Any
 import asyncio
-from datetime import datetime  # Ajout de l'import manquant
 from server.connectors import BaseConnector, BinanceConnector, KrakenConnector
 from server.auth.auth_manager import AuthenticationManager
 from server.services.websocket_manager import ClientWebSocketManager

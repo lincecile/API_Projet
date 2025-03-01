@@ -2,10 +2,8 @@ import asyncio
 import aiohttp
 import websockets
 import json
-from typing import Optional, List, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable
 from client.client_credentials import Credentials
-import datetime
-import pandas as pd
 
 class ClientSide:
     def __init__(self, base_url: str = "http://localhost:8000"):
